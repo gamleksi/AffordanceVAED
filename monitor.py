@@ -1,0 +1,171 @@
+import numpy as np
+import torch
+import torchnet as tnt
+from tqdm import tqdm
+from torchnet.engine import Engine
+from torchnet.logger import MeterLogger, VisdomLogger
+import csv
+import pathlib
+import os
+from random import sample  
+from torch.autograd import Variable
+
+
+class Trainer(Engine):
+    def __init__(self, dataloader, save_folder, save_name, visdom=True, log=True, server='localhost', port=8097, validation_step=1):
+        super(Trainer, self).__init__()
+
+        self.get_iterator = dataloader.get_iterator
+        self.visdom_samples = dataloader.visdom_data
+
+        self.meter_loss = tnt.meter.AverageValueMeter()
+        self.epoch_iter = 0
+        self.validation_step = validation_step
+        self.best_loss = np.inf 
+        self.log_data = log
+        if self.log_data: 
+            self.initilize_log(save_folder, save_name)
+        self.visdom = visdom
+        if self.visdom:
+            self.mlog = MeterLogger(server=server, port=port, title="mnist_meterlogger")
+            self.port = port
+            
+        self.initialize_engine()
+
+    def initialize_engine(self):
+        self.hooks['on_sample'] = self.on_sample
+        self.hooks['on_forward'] = self.on_forward
+        self.hooks['on_start_epoch'] = self.on_start_epoch
+        self.hooks['on_end_epoch'] = self.on_end_epoch
+
+    def train(self, model, num_epoch, optimizer):
+
+        self.model = model 
+
+        super(Trainer, self).train(self.model.evaluate, self.get_iterator(True), maxepoch=num_epoch, optimizer=optimizer)
+
+    def reset_meters(self):
+        self.meter_loss.reset()
+
+    def on_sample(self, state):
+        state['sample'].append(state['train'])
+
+    def on_forward(self, state):
+        loss = state['loss']
+        self.meter_loss.add(loss.item())
+        if self.visdom:
+            self.mlog.update_loss(loss, meter='loss')
+
+    def on_start_epoch(self, state):
+        self.reset_meters()
+        if self.visdom:
+            self.mlog.timer.reset()
+
+        state['iterator'] = tqdm(state['iterator'])
+    
+    def on_end_epoch(self, state):
+        
+        train_loss = self.meter_loss.value()[0]
+        # print('Training loss: %.4f' % (train_loss))
+        # do validation at the end of each epoch
+        self.reset_meters()
+        if self.visdom:
+            self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
+            self.mlog.reset_meter(mode="Train", iepoch=state['epoch'])
+        
+        self.epoch_iter += 1
+
+        if self.validation_step == self.epoch_iter:
+            self.test(self.model.evaluate, self.get_iterator(False))
+            val_loss = self.meter_loss.value()[0]
+            #print('Testing loss: %.4f' % (val_loss))
+
+            if self.log_data:
+
+                self.log_csv(train_loss, val_loss, val_loss < self.best_loss)
+
+                if val_loss < self.best_loss:
+                    self.save_model()
+                    self.best_loss = val_loss
+
+            if self.visdom:
+                self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
+                self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
+                # samples = Variable(self.visdom_samples.float() / 255)
+                _, x_recon = self.model.evaluate([self.visdom_samples, False])
+                self.generate_visdom_samples(self.visdom_samples, x_recon)
+
+            self.epoch_iter = 0
+
+    def initilize_log(self, save_folder, save_name):
+
+        self.log_path = pathlib.Path('./log/{}'.format(save_folder)) 
+
+        assert(not(self.log_path.exists())) 
+
+        self.log_path.mkdir(parents=True)
+        
+        self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name)) 
+        self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
+
+    def save_model(self):
+        torch.save(self.model.state_dict(), self.model_path)
+
+    def log_csv(self, train_loss, val_loss, improved):
+        
+        fieldnames = ['train_loss', 'val_loss', 'improved']
+        fields=[train_loss, val_loss, int(improved)]
+
+        file_exists = os.path.isfile(self.csv_path)
+
+        with open(self.csv_path, 'a') as f:
+            writer = csv.DictWriter(f, delimiter=',', fieldnames=fieldnames)
+            if not(file_exists):
+                writer.writeheader()
+            row = {}
+            for i, name in enumerate(fieldnames):
+                row[name] = fields[i] 
+
+            writer.writerow(row)
+
+    def generate_visdom_samples(self, samples, recons):
+
+        self.val_sample_logger = VisdomLogger('images', port=self.port, opts=dict(nrow=2))
+        n = recons.shape[0]
+        input = self.visdom_samples.numpy()
+        input = input[:,np.newaxis]
+        output = recons.detach().numpy()
+        output = output.reshape(n,28,28) * 255
+        output = output[:, np.newaxis]
+        samples = np.column_stack((input,output)).reshape(n*2, 1, 28,28)
+
+        self.val_sample_logger.log(samples)
+
+
+class Demonstrator(Engine):
+
+    def __init__(self, model, folder, model_name):
+        super(Demonstrator, self).__init__()
+        self.model = model
+        self.load_parameters(folder, model_name)
+        self.initialize_engine()
+
+    def initialize_engine(self):
+        self.hooks['on_forward'] = self.on_forward
+    
+    def load_parameters(self, folder, model_name):
+        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name)) 
+        self.model.load_state_dict(torch.load(Path))
+        self.model.eval()
+
+    def on_forward(self, state):
+        self.meter_loss.add(state['loss'].item())
+
+    def on_sample(self, state):
+        state['sample'].append(state['train'])
+    
+    def evaluate(self, get_iterator):
+        self.meter_loss = tnt.meter.AverageValueMeter()
+        self.test(self.model.evaluate, get_iterator(False))
+        val_loss = self.meter_loss.value()[0]
+        print('Testing loss: %.4f' % (val_loss))
