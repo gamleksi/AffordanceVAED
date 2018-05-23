@@ -26,7 +26,7 @@ def main():
     NUM_PROCESSES = 8 
 
     # Data and model
-    z_dim = 2 
+    z_dim = 10 
     hidden_dim = 400 
     input_dim = 784 
 

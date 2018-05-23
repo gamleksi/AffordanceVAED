@@ -91,9 +91,9 @@ class Trainer(Engine):
             if self.visdom:
                 self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
                 self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
-                _, x_recon = self.model.evaluate([self.visdom_samples, False])
-                self.generate_visdom_samples(self.visdom_samples, x_recon)
-
+                self.generate_visdom_samples(self.visdom_samples)
+                self.generate_latent_samples(self.visdom_samples[2])
+        
 
     def initilize_log(self, save_folder, save_name):
 
@@ -125,24 +125,60 @@ class Trainer(Engine):
                 row[name] = fields[i] 
 
             writer.writerow(row)
+        
+    def form_grayscale_images(self, recons, num_samples, img_shape):
+        output = recons.detach().numpy()
+        output = output.reshape(num_samples, img_shape[0],img_shape[1]) * 255
+        output = output[:, np.newaxis]
+        return output
 
-    def generate_visdom_samples(self, samples, recons):
+
+    def generate_visdom_samples(self, samples):
+
+        _, recons = self.model.evaluate([samples, False])
 
         sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
         # TODO: RBB data
 
         n = recons.shape[0]
-        input = self.visdom_samples.numpy()
+        input = samples.numpy()
         input = input[:,np.newaxis]
 
-        output = recons.detach().numpy()
-        output = output.reshape(n,input.shape[-2],input.shape[-1]) * 255
-        output = output[:, np.newaxis]
+        output = self.form_grayscale_images(recons, n, (samples.shape[-2], samples.shape[-1]))
         samples = np.column_stack((input,output)).reshape(n*2, 1, input.shape[-2],input.shape[-1])
 
         sample_logger.log(samples)
+    
+    def generate_latent_samples(self, sample):
 
+        num_samples = 10
+        img_dim = (sample.shape[1], sample.shape[1])
+
+        sample_logger = VisdomLogger('images', port=self.port, nrow=10, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        mu, logvar = self.model.latent_values(sample)
+
+        stds = torch.exp(0.5*logvar)
+        zdim = stds.shape[1]
+
+        latent_samples = torch.zeros(zdim, num_samples, zdim)
+        latent_samples[:,:] = mu 
+
+        coefs = torch.linspace(-1, 1, num_samples) * 100  
+
+        for i in range(zdim):
+
+            c_mu = mu[0][i] 
+            c_stds = stds[0][i]
+            z_samples = c_stds.mul(coefs).add(c_mu)
+            latent_samples[i, :, i] = z_samples
+
+        latent_samples = latent_samples.view(num_samples * zdim, zdim)
+        images = self.model.decoder(latent_samples)
+        images = self.form_grayscale_images(images, num_samples * zdim, img_dim)
+
+        sample_logger.log(images)
 
 class Demonstrator(Engine):
 

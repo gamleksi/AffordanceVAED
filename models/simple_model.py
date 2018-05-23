@@ -75,3 +75,13 @@ class VAE(nn.Module):
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
         return BCE + KLD, x_recon 
+    
+    def latent_values(self, sample):
+
+        if sample.dim() == 2:
+            sample.unsqueeze_(0)
+        
+        x = Variable(sample.float() / 255)
+        mu, logvar = self.encoder(x)
+
+        return mu, logvar
