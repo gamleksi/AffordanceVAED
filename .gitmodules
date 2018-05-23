@@ -1,3 +1,0 @@
-[submodule "libs/tnt"]
-	path = libs/tnt
-	url = git@github.com:pytorch/tnt.git
