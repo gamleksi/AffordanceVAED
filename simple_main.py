@@ -1,5 +1,10 @@
 import os
 
+import sys
+sys.path.insert(0, '../../libs/tnt/')
+import torchnet as tnt 
+
+import torchnet as tnt
 import torch.optim as optim
 from loaders import MNISTLoader 
 

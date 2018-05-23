@@ -1,6 +1,8 @@
+import torchnet as tnt 
+
 import numpy as np
 from torchvision.datasets.mnist import MNIST
-import torchnet as tnt
+
 import torch
 
 class MNISTLoader(object):

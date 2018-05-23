@@ -1,9 +1,12 @@
 import numpy as np
 import torch
-import torchnet as tnt
-from tqdm import tqdm
+import sys
+# sys.path.insert(0, '../../libs/')
+import torchnet as tnt 
 from torchnet.engine import Engine
 from torchnet.logger import MeterLogger, VisdomLogger
+
+from tqdm import tqdm
 import csv
 import pathlib
 import os
@@ -66,8 +69,6 @@ class Trainer(Engine):
     def on_end_epoch(self, state):
         
         train_loss = self.meter_loss.value()[0]
-        # print('Training loss: %.4f' % (train_loss))
-        # do validation at the end of each epoch
         self.reset_meters()
         if self.visdom:
             self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
@@ -75,10 +76,9 @@ class Trainer(Engine):
         
         self.epoch_iter += 1
 
-        if self.validation_step == self.epoch_iter:
+        if self.epoch_iter % self.validation_step == 0:
             self.test(self.model.evaluate, self.get_iterator(False))
             val_loss = self.meter_loss.value()[0]
-            #print('Testing loss: %.4f' % (val_loss))
 
             if self.log_data:
 
@@ -91,11 +91,9 @@ class Trainer(Engine):
             if self.visdom:
                 self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
                 self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
-                # samples = Variable(self.visdom_samples.float() / 255)
                 _, x_recon = self.model.evaluate([self.visdom_samples, False])
                 self.generate_visdom_samples(self.visdom_samples, x_recon)
 
-            self.epoch_iter = 0
 
     def initilize_log(self, save_folder, save_name):
 
@@ -130,16 +128,20 @@ class Trainer(Engine):
 
     def generate_visdom_samples(self, samples, recons):
 
-        self.val_sample_logger = VisdomLogger('images', port=self.port, opts=dict(nrow=2))
+        sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        # TODO: RBB data
+
         n = recons.shape[0]
         input = self.visdom_samples.numpy()
         input = input[:,np.newaxis]
-        output = recons.detach().numpy()
-        output = output.reshape(n,28,28) * 255
-        output = output[:, np.newaxis]
-        samples = np.column_stack((input,output)).reshape(n*2, 1, 28,28)
 
-        self.val_sample_logger.log(samples)
+        output = recons.detach().numpy()
+        output = output.reshape(n,input.shape[-2],input.shape[-1]) * 255
+        output = output[:, np.newaxis]
+        samples = np.column_stack((input,output)).reshape(n*2, 1, input.shape[-2],input.shape[-1])
+
+        sample_logger.log(samples)
 
 
 class Demonstrator(Engine):
