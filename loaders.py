@@ -1,9 +1,14 @@
-import torchnet as tnt 
+import sys, os
+sys.path.insert(0, './libs/tnt/')
 
+import torchnet as tnt   
+import torch
 import numpy as np
+import torch
 from torchvision.datasets.mnist import MNIST
 
-import torch
+from torchvision import transforms
+from PIL import Image
 
 class MNISTLoader(object):
     def __init__(self, batch_size, num_processes, debug=False): 
@@ -13,18 +18,22 @@ class MNISTLoader(object):
         self.debug = debug
 
     def intialize_visdom_samples(self):
+
         ds = MNIST(root='./', download=True, train=False) 
         data = getattr(ds, 'test_data')
+
+        # stupid hack to get a sample from every class
+        self.visdom_data = torch.zeros(10, data.shape[1], data.shape[2])
+        self.visdom_labels = np.arange(0,10)
+
         labels = getattr(ds, 'test_labels').numpy()
-        self.visdom_data = np.zeros([9,data.shape[1], data.shape[2]])
-        self.visdom_labels = np.arange(1,10)
-        
         for l in self.visdom_labels:
             b = labels == l  
             idx = np.nonzero(b)[0][0]
             self.visdom_data[l - 1] = data[idx]
-        
-        self.visdom_data = torch.from_numpy(self.visdom_data)
+
+        self.visdom_data= self.visdom_data.float() / 255
+        self.visdom_data.unsqueeze_(1)
         
     def get_debug_iter(self, train):
 
@@ -32,11 +41,11 @@ class MNISTLoader(object):
         data = getattr(ds, 'train_data' if train else 'test_data')
 
         labels = getattr(ds, 'train_labels' if train else 'test_labels').numpy()
-
         b = labels == 5  
         idx = np.nonzero(b)[0]
 
         data = data[idx]
+        data.unsqueeze_(1)
 
         tds = tnt.dataset.TensorDataset([data])
 
@@ -49,12 +58,65 @@ class MNISTLoader(object):
             return self.get_debug_iter(train) 
 
         ds = MNIST(root='./', download=True, train=train) 
+        
 
         data = getattr(ds, 'train_data' if train else 'test_data')
 
-        tds = tnt.dataset.TensorDataset([data])
+        data = data.float() / 255
+        data.unsqueeze_(1)
 
+        tds = tnt.dataset.TensorDataset(data)
         return tds.parallel(batch_size=self.batch_size, num_workers=self.num_processes, shuffle=train)
-    
+
+from torchvision.datasets import ImageFolder
+
+ 
+
+
+class ChairsLoader(object):
+    def __init__(self, batch_size, num_processes, debug=False, root_dir='data/chairs/rendered_chairs/', grayscale=False, train_test_ratio=0.7): 
+        self.batch_size = batch_size
+        self.grayscale = grayscale
+        self.num_processes = num_processes
+        self.initialize_dataset(root_dir, train_test_ratio)
+
+    def initialize_dataset(self, root_dir, train_test_ratio):
+
+        data = ImageFolder(root=root_dir)
+        path_list = [path[0] for path in data.imgs] 
+        
+        ds = tnt.dataset.ListDataset(path_list, load=self.load_data)
+        ds = ds.shuffle()
+        self.dataset = ds.split({'train': 0.75, 'test': 0.25})
+
+    def get_iterator(self, train):
+
+        if train:
+            self.dataset.select('train')
+        else:
+            self.dataset.select('test')
+
+        data_loader = self.dataset.parallel(batch_size=self.batch_size, num_workers=self.num_processes, shuffle=train)
+
+        return data_loader 
+
+    def load_data(self, path):
+
+        image = Image.open(path) 
+
+        if self.grayscale:
+            grayscale = transforms.Grayscale(num_output_channels=1)
+            image = grayscale(image)
+
+        transform_content = transforms.Compose([
+            transforms.CenterCrop(64),
+            transforms.ToTensor(),
+
+        ])
+
+        transformed = transform_content(image)
+
+        return transformed
+
 if __name__ == '__main__':
-    MNISTLoader(10, 1)
+    l = ChairsLoader(40, 4)

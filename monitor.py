@@ -1,10 +1,12 @@
 import numpy as np
 import torch
 import sys
-# sys.path.insert(0, '../../libs/')
+
 import torchnet as tnt 
 from torchnet.engine import Engine
 from torchnet.logger import MeterLogger, VisdomLogger
+
+from torchvision import transforms
 
 from tqdm import tqdm
 import csv
@@ -19,22 +21,23 @@ class Trainer(Engine):
         super(Trainer, self).__init__()
 
         self.get_iterator = dataloader.get_iterator
-        self.visdom_samples = dataloader.visdom_data
-
         self.meter_loss = tnt.meter.AverageValueMeter()
         self.epoch_iter = 0
+        self.initialize_engine()
+
         self.validation_step = validation_step
-        self.best_loss = np.inf 
+ 
         self.log_data = log
         if self.log_data: 
             self.initilize_log(save_folder, save_name)
+            self.best_loss = np.inf
+
         self.visdom = visdom
         if self.visdom:
             self.mlog = MeterLogger(server=server, port=port, title="mnist_meterlogger")
             self.port = port
+            self.visdom_samples = dataloader.visdom_data
             
-        self.initialize_engine()
-
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
         self.hooks['on_forward'] = self.on_forward
@@ -42,16 +45,14 @@ class Trainer(Engine):
         self.hooks['on_end_epoch'] = self.on_end_epoch
 
     def train(self, model, num_epoch, optimizer):
-
         self.model = model 
-
         super(Trainer, self).train(self.model.evaluate, self.get_iterator(True), maxepoch=num_epoch, optimizer=optimizer)
-
+    
     def reset_meters(self):
         self.meter_loss.reset()
 
     def on_sample(self, state):
-        state['sample'].append(state['train'])
+        state['sample'] = (state['sample'], state['train'])
 
     def on_forward(self, state):
         loss = state['loss']
@@ -92,13 +93,14 @@ class Trainer(Engine):
                 self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
                 self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
                 self.generate_visdom_samples(self.visdom_samples)
-                self.generate_latent_samples(self.visdom_samples[2])
+                self.generate_latent_samples(self.visdom_samples[0])
         
 
     def initilize_log(self, save_folder, save_name):
 
         self.log_path = pathlib.Path('./log/{}'.format(save_folder)) 
 
+        # remove a suggested folder or name another 
         assert(not(self.log_path.exists())) 
 
         self.log_path.mkdir(parents=True)
@@ -126,38 +128,32 @@ class Trainer(Engine):
 
             writer.writerow(row)
         
-    def form_grayscale_images(self, recons, num_samples, img_shape):
-        output = recons.detach().numpy()
-        output = output.reshape(num_samples, img_shape[0],img_shape[1]) * 255
-        output = output[:, np.newaxis]
-        return output
-
-
     def generate_visdom_samples(self, samples):
 
-        _, recons = self.model.evaluate([samples, False])
-
+        # builds a new visdom block for every image 
         sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
-        # TODO: RBB data
+
+        state = (samples, False)
+        _, recons = self.model.evaluate(state)
 
         n = recons.shape[0]
-        input = samples.numpy()
-        input = input[:,np.newaxis]
 
-        output = self.form_grayscale_images(recons, n, (samples.shape[-2], samples.shape[-1]))
-        samples = np.column_stack((input,output)).reshape(n*2, 1, input.shape[-2],input.shape[-1])
+        input = samples.detach().numpy() * 255
+        output = recons.detach().numpy() * 255
+
+        samples = np.column_stack((input,output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
 
         sample_logger.log(samples)
     
     def generate_latent_samples(self, sample):
 
-        num_samples = 10
-        img_dim = (sample.shape[1], sample.shape[1])
+        num_samples = 20
+        img_dim = (sample.shape[0], sample.shape[1], sample.shape[2])
 
-        sample_logger = VisdomLogger('images', port=self.port, nrow=10, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
-        mu, logvar = self.model.latent_values(sample)
+        mu, logvar = self.model.latent_distribution(sample)
 
         stds = torch.exp(0.5*logvar)
         zdim = stds.shape[1]
@@ -176,9 +172,7 @@ class Trainer(Engine):
 
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
         images = self.model.decoder(latent_samples)
-        images = self.form_grayscale_images(images, num_samples * zdim, img_dim)
-
-        sample_logger.log(images)
+        sample_logger.log(images.detach().numpy())
 
 class Demonstrator(Engine):
 
@@ -195,8 +189,6 @@ class Demonstrator(Engine):
         Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name)) 
         self.model.load_state_dict(torch.load(Path))
         self.model.eval()
-
-    def on_forward(self, state):
         self.meter_loss.add(state['loss'].item())
 
     def on_sample(self, state):
