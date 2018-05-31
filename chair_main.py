@@ -20,7 +20,7 @@ def main():
 
     # Run only for a single iteration for testing
     NUM_EPOCHS = 50 
-    BATCH_SIZE = 256
+    BATCH_SIZE = 10
     NUM_PROCESSES = 8 
 
     # Data and model
@@ -40,7 +40,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     dataloader = ChairsLoader(BATCH_SIZE, NUM_PROCESSES, grayscale=grayscale, debug=True)
 
-    trainer = Trainer(dataloader, 'simple', 'fc_model', log=False, visdom=False)
+    trainer = Trainer(dataloader, 'simple', 'fc_model', log=False, visdom=True)
     trainer.train(model, NUM_EPOCHS, optimizer)
 
 if __name__ == '__main__':

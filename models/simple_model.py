@@ -84,10 +84,9 @@ class VAE(nn.Module):
     
     def latent_distribution(self, sample):
 
-        if sample.dim() == 2:
-            sample.unsqueeze_(0)
-        
-        x = Variable(sample.float() / 255)
+        sample.unsqueeze_(0)
+
+        x = Variable(sample)
         mu, logvar = self.encoder(x)
 
         return mu, logvar

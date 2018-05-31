@@ -78,14 +78,24 @@ class ChairsLoader(object):
         self.batch_size = batch_size
         self.grayscale = grayscale
         self.num_processes = num_processes
-        self.initialize_dataset(root_dir, train_test_ratio)
+        self.debug = debug
+        self._initialize_dataset(root_dir, train_test_ratio)
+        self._intialize_visdom_samples()
 
-    def initialize_dataset(self, root_dir, train_test_ratio):
+    def _intialize_visdom_samples(self):
+
+        self.dataset.select('test')
+        self.visdom_data = torch.stack([self.dataset.__getitem__(idx) for idx in range(10)])
+
+    def _initialize_dataset(self, root_dir, train_test_ratio):
 
         data = ImageFolder(root=root_dir)
         path_list = [path[0] for path in data.imgs] 
+
+        if self.debug:
+            path_list = path_list[:40]
         
-        ds = tnt.dataset.ListDataset(path_list, load=self.load_data)
+        ds = tnt.dataset.ListDataset(path_list, load=self._load_data)
         ds = ds.shuffle()
         self.dataset = ds.split({'train': 0.75, 'test': 0.25})
 
@@ -100,7 +110,7 @@ class ChairsLoader(object):
 
         return data_loader 
 
-    def load_data(self, path):
+    def _load_data(self, path):
 
         image = Image.open(path) 
 
