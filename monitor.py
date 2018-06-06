@@ -1,33 +1,26 @@
 import numpy as np
 import torch
-import sys
 
-import torchnet as tnt 
+import torchnet as tnt
 from torchnet.engine import Engine
 from torchnet.logger import MeterLogger, VisdomLogger
-
-from torchvision import transforms
 
 from tqdm import tqdm
 import csv
 import pathlib
 import os
-from random import sample  
-from torch.autograd import Variable
 
 
 class Trainer(Engine):
-    def __init__(self, dataloader, save_folder, save_name, visdom=True, log=True, server='localhost', port=8097, validation_step=1):
+    def __init__(self, dataloader, save_folder, save_name, visdom=True, log=True, server='localhost', port=8097):
         super(Trainer, self).__init__()
 
         self.get_iterator = dataloader.get_iterator
         self.meter_loss = tnt.meter.AverageValueMeter()
-        self.epoch_iter = 0
         self.initialize_engine()
 
-        self.validation_step = validation_step
- 
         self.log_data = log
+
         if self.log_data: 
             self.initilize_log(save_folder, save_name)
             self.best_loss = np.inf
@@ -37,6 +30,8 @@ class Trainer(Engine):
             self.mlog = MeterLogger(server=server, port=port, title="mnist_meterlogger")
             self.port = port
             self.visdom_samples = dataloader.visdom_data
+            self.epoch_iter = 0
+            self.sample_images_step = 2
             
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
@@ -44,8 +39,9 @@ class Trainer(Engine):
         self.hooks['on_start_epoch'] = self.on_start_epoch
         self.hooks['on_end_epoch'] = self.on_end_epoch
 
+
     def train(self, model, num_epoch, optimizer):
-        self.model = model 
+        self.model = model
         super(Trainer, self).train(self.model.evaluate, self.get_iterator(True), maxepoch=num_epoch, optimizer=optimizer)
     
     def reset_meters(self):
@@ -75,9 +71,7 @@ class Trainer(Engine):
             self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
             self.mlog.reset_meter(mode="Train", iepoch=state['epoch'])
         
-        self.epoch_iter += 1
 
-        if self.epoch_iter % self.validation_step == 0:
             self.test(self.model.evaluate, self.get_iterator(False))
             val_loss = self.meter_loss.value()[0]
 
@@ -88,24 +82,24 @@ class Trainer(Engine):
                 if val_loss < self.best_loss:
                     self.save_model()
                     self.best_loss = val_loss
+        if self.visdom:
+            self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
+            self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
 
-            if self.visdom:
-                self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
-                self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
+            if self.epoch_iter % self.sample_images_step == 0:
+
                 self.generate_visdom_samples(self.visdom_samples)
                 self.generate_latent_samples(self.visdom_samples[0])
-        
+
+                self.epoch_iter += 1
 
     def initilize_log(self, save_folder, save_name):
 
-        self.log_path = pathlib.Path('./log/{}'.format(save_folder)) 
-
-        # remove a suggested folder or name another 
+        self.log_path = pathlib.Path('./log/{}'.format(save_folder))
+        # remove a suggested folder or name another
         assert(not(self.log_path.exists())) 
-
         self.log_path.mkdir(parents=True)
-        
-        self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name)) 
+        self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name))
         self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
 
     def save_model(self):
@@ -133,24 +127,21 @@ class Trainer(Engine):
         # builds a new visdom block for every image 
         sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
-
         state = (samples, False)
         _, recons = self.model.evaluate(state)
 
         n = recons.shape[0]
 
-        input = samples.detach().numpy() * 255
-        output = recons.detach().numpy() * 255
+        input = samples.cpu().detach().numpy() * 255
+        output = recons.cpu().detach().numpy() * 255
 
-        samples = np.column_stack((input,output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
+        samples = np.column_stack((input, output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
 
         sample_logger.log(samples)
     
     def generate_latent_samples(self, sample):
 
         num_samples = 20
-        img_dim = (sample.shape[0], sample.shape[1], sample.shape[2])
-
         sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
         mu, logvar = self.model.latent_distribution(sample)
@@ -158,10 +149,10 @@ class Trainer(Engine):
         stds = torch.exp(0.5*logvar)
         zdim = stds.shape[1]
 
-        latent_samples = torch.zeros(zdim, num_samples, zdim)
-        latent_samples[:,:] = mu 
+        latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
+        latent_samples[:, :] = mu
 
-        coefs = torch.linspace(-1, 1, num_samples) * 100  
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * 100
 
         for i in range(zdim):
 
@@ -172,7 +163,8 @@ class Trainer(Engine):
 
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
         images = self.model.decoder(latent_samples)
-        sample_logger.log(images.detach().numpy())
+        sample_logger.log(images.cpu().detach().numpy())
+
 
 class Demonstrator(Engine):
 

@@ -1,0 +1,6 @@
+torchvision
+torch
+numpy
+tqdm
+pathlib
+visdom

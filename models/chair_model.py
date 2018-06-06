@@ -3,8 +3,7 @@ import torch.nn as nn
 import torch.distributions as dists
 import torch.nn.functional as F
 
-# From: https://openreview.net/pdf?id=Sy2fzU9gl 
-
+# From: https://openreview.net/pdf?id=Sy2fzU9gl
 class Decoder(nn.Module):
     def __init__(self, z_dim, image_depth):
         super(Decoder, self).__init__()

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.distributions as dists
 
 class Decoder(nn.Module):
     def __init__(self, img_width, img_height, img_channels, z_dim, hidden_dim):
@@ -37,7 +36,6 @@ class Encoder(nn.Module):
         self.softplus = nn.Softplus()
 
     def forward(self, x):
-
         x = x.view(-1, self.img_width * self.img_height)
         hidden = self.softplus(self.fc1(x))
         z_loc = self.fc21(hidden)
@@ -49,8 +47,9 @@ from torch.nn import functional as F
 
 class VAE(nn.Module):
 
-    def __init__(self, encoder, decoder, beta=1):
+    def __init__(self, encoder, decoder, device, beta=1):
         super(VAE, self).__init__()
+        self.device = device
         self.encoder = encoder
         self.decoder = decoder 
         self.beta = beta
@@ -63,20 +62,20 @@ class VAE(nn.Module):
     def _reparameterize(self, mu, logvar, train):
         if train:
             std = torch.exp(0.5*logvar)
-            eps = torch.randn_like(std)
+            eps = torch.randn_like(std, device=self.device)
             return eps.mul(std).add_(mu)
         else:
             return mu
         
     def evaluate(self, state): 
         # state includes batch samples and a train / test flag
-        # samples should be tensors and processed in loader function.    
+        # samples should be tensors and processed in loader function.
 
-        x = Variable(state[0])
+        x = Variable(state[0].to(self.device))
         train = state[1]
         x_recon,  mu, log_var = self._forward(x, train)
 
-        BCE = F.binary_cross_entropy(x_recon, x, size_average=False) 
+        BCE = F.binary_cross_entropy(x_recon, x, size_average=False)
 
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
@@ -86,7 +85,7 @@ class VAE(nn.Module):
 
         sample.unsqueeze_(0)
 
-        x = Variable(sample)
+        x = Variable(sample.to(self.device))
         mu, logvar = self.encoder(x)
 
         return mu, logvar

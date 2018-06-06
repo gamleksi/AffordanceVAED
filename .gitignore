@@ -97,10 +97,12 @@ ENV/
 .DS_Store
 
 # log
-log/* 
+log/*
 
 # MNIST
 raw/*
 data/*
 
 processed/
+
+.idea/

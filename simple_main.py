@@ -1,27 +1,24 @@
-import os
-
-import sys
-sys.path.insert(0, './libs/tnt/')
+import torch
 
 import torch.optim as optim
 from loaders import MNISTLoader 
 
 from models.simple_model import Decoder, Encoder, VAE 
 
-from monitor import Trainer, Demonstrator 
-# from torch.nn.init import kaiming_normal
+from monitor import Trainer # Demonstrator
 
-   
+
 def main():
 
     # Run options
     LEARNING_RATE = 1.0e-3
-    USE_CUDA = False 
+    use_cuda =  torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
 
     # Run only for a single iteration for testing
     NUM_EPOCHS = 50 
-    BATCH_SIZE = 256
-    NUM_PROCESSES = 1 
+    BATCH_SIZE = 257
+    NUM_PROCESSES = 16
 
     # Data and model
     z_dim = 3 
@@ -33,12 +30,12 @@ def main():
     encoder = Encoder(img_width, img_height, z_dim, hidden_dim)
     decoder = Decoder(img_width, img_height, img_channels, z_dim, hidden_dim)
 
-    model = VAE(encoder, decoder, beta=3)
+    model = VAE(encoder, decoder, device, beta=3).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     dataloader = MNISTLoader(BATCH_SIZE, NUM_PROCESSES, debug=False)
 
-    trainer = Trainer(dataloader, 'simple', 'fc_model', log=False)
+    trainer = Trainer(dataloader, 'simple', 'fc_model', log=False, visdom=True)
     trainer.train(model, NUM_EPOCHS, optimizer)
 
 #    encoder = Encoder(input_dim, z_dim, hidden_dim)
