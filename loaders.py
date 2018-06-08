@@ -2,9 +2,7 @@ import torchnet as tnt
 import numpy as np
 import torch
 from torchvision.datasets.mnist import MNIST
-
-from torchvision import transforms
-
+import os
 
 class MNISTLoader(object):
     def __init__(self, batch_size, num_processes, debug=False):
@@ -63,21 +61,10 @@ class MNISTLoader(object):
         return tds.parallel(batch_size=self.batch_size, num_workers=self.num_processes, shuffle=train)
 
 
-from torchvision.datasets.folder import default_loader
-from torchvision.datasets import ImageFolder
 
+class ImageLoader(object):
 
-
-
-# The whole dataset is moved to RAM
-from tqdm import tqdm
-
-import torch
-import os
-
-
-class ChairsLoader(object):
-    def __init__(self, batch_size, num_processes, debug=False, root_dir='data/chairs/', grayscale=False, train_test_ratio=0.7):
+    def __init__(self, batch_size, num_processes, root_dir,  debug=False, grayscale=False):
         self.batch_size = batch_size
         self.grayscale = grayscale
         self.num_processes = num_processes
@@ -86,6 +73,7 @@ class ChairsLoader(object):
         self._intialize_visdom_samples()
 
     def _intialize_visdom_samples(self):
+
         data, _ = torch.load(os.path.join(self.root_dir, 'test.pt'))
         if self.grayscale:
             from tools import rgb_tensors_grayscale

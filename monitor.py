@@ -12,7 +12,7 @@ import os
 
 
 class Trainer(Engine):
-    def __init__(self, dataloader, save_folder, save_name, visdom=True, log=True, server='localhost', port=8097):
+    def __init__(self, dataloader, save_folder=None, save_name=None, log=False, visdom=True, server='localhost', port=8097, visdom_title="mnist_meterlogger"):
         super(Trainer, self).__init__()
 
         self.get_iterator = dataloader.get_iterator
@@ -21,17 +21,20 @@ class Trainer(Engine):
 
         self.log_data = log
 
-        if self.log_data: 
+        if self.log_data:
+            assert(save_folder is not None and save_name is not None)
             self.initilize_log(save_folder, save_name)
             self.best_loss = np.inf
+        else:
+            assert(save_folder is None and save_name is None)
 
         self.visdom = visdom
         if self.visdom:
-            self.mlog = MeterLogger(server=server, port=port, title="mnist_meterlogger")
+            self.mlog = MeterLogger(server=server, port=port, title=visdom_title)
             self.port = port
             self.visdom_samples = dataloader.visdom_data
             self.epoch_iter = 0
-            self.sample_images_step = 2
+            self.sample_images_step = 11
             
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
@@ -91,7 +94,9 @@ class Trainer(Engine):
                 self.generate_visdom_samples(self.visdom_samples)
                 self.generate_latent_samples(self.visdom_samples[0])
 
-                self.epoch_iter += 1
+            self.epoch_iter += 1
+
+
 
     def initilize_log(self, save_folder, save_name):
 
@@ -137,6 +142,7 @@ class Trainer(Engine):
 
         samples = np.column_stack((input, output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
 
+
         sample_logger.log(samples)
     
     def generate_latent_samples(self, sample):
@@ -152,7 +158,7 @@ class Trainer(Engine):
         latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
         latent_samples[:, :] = mu
 
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * 100
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * 10
 
         for i in range(zdim):
 
@@ -163,31 +169,30 @@ class Trainer(Engine):
 
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
         images = self.model.decoder(latent_samples)
+
         sample_logger.log(images.cpu().detach().numpy())
 
+class Demonstrator(Trainer):
 
-class Demonstrator(Engine):
-
-    def __init__(self, model, folder, model_name):
-        super(Demonstrator, self).__init__()
+    def __init__(self,  folder, model_name, model, data_loader, visdom_title='training_results'):
+        super(Demonstrator, self).__init__(data_loader, visdom_title=visdom_title, visdom=True)
         self.model = model
         self.load_parameters(folder, model_name)
-        self.initialize_engine()
 
     def initialize_engine(self):
+        self.hooks['on_sample'] = self.on_sample
         self.hooks['on_forward'] = self.on_forward
-    
+
     def load_parameters(self, folder, model_name):
         Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name)) 
         self.model.load_state_dict(torch.load(Path))
         self.model.eval()
-        self.meter_loss.add(state['loss'].item())
 
-    def on_sample(self, state):
-        state['sample'].append(state['train'])
-    
-    def evaluate(self, get_iterator):
-        self.meter_loss = tnt.meter.AverageValueMeter()
-        self.test(self.model.evaluate, get_iterator(False))
+    def evaluate(self):
+        self.test(self.model.evaluate, self.get_iterator(False))
         val_loss = self.meter_loss.value()[0]
+
         print('Testing loss: %.4f' % (val_loss))
+
+        self.generate_visdom_samples(self.visdom_samples)
+        self.generate_latent_samples(self.visdom_samples[0])
