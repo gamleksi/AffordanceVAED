@@ -12,8 +12,6 @@ from torch import multiprocessing
 from torch.multiprocessing import Pool
 from scipy.io import loadmat
 
-from skimage import transform
-
 '''
   1 - 'grasp': red (255, 0, 0)
   2 - 'cut':   yellow (255, 255, 0)
@@ -35,11 +33,14 @@ AFFORDANCE_RGB = {
     7: (255, 255, 255),
     }
 
+DEPTH_MAX = 3626
 
+
+# -> H, W, C
 def affordance_to_image(affordance_matrix):
 
     if torch.is_tensor(affordance_matrix):
-        affordance_matrix = affordance_matrix.detach().numpy()
+        affordance_matrix = affordance_matrix.detach().cpu().numpy()
 
     image = np.zeros((affordance_matrix.shape[1], affordance_matrix.shape[2], 3))
 
@@ -52,30 +53,99 @@ def affordance_to_image(affordance_matrix):
 
     return image
 
-def save_affordance_pair(image, affordance_matrix, save_file='testi.jpg'):
+
+def affordance_to_array(affordance_matrix):
+
+
+    if torch.is_tensor(affordance_matrix):
+        affordance_matrix = affordance_matrix.detach().cpu().numpy()
+
+    max_table = np.argmax(affordance_matrix, 0).reshape(-1)
+    max_values = np.max(affordance_matrix, 0).reshape(-1) # 0 or 1
+
+    image = np.zeros((3, affordance_matrix.shape[1] * affordance_matrix.shape[2]))
+
+    for idx, max_label in enumerate(max_table):
+
+        if max_values[idx] > 0.5:
+
+            max_label = int(max_label) + 1
+
+            color = np.array(AFFORDANCE_RGB[max_label])
+            image[0, idx] = color[0]
+            image[1, idx] = color[1]
+            image[2, idx] = color[2]
+
+    return image.reshape((3, affordance_matrix.shape[1], affordance_matrix.shape[2]))
+
+def save_affordance_pair(image, affordance_matrix, depth_image, save_file='testi.jpg'):
 
     if torch.is_tensor(image):
         image = image.detach().numpy()
-
-    if image.shape[0] > 3:
-        image = image[0:3]
+        depth_image = depth_image.detach().numpy()
 
     image = np.transpose(image, (1, 2, 0)) * 255
 
+    depth_image = np.stack((depth_image[0],)*3, -1) * 255
+
     affordance_matrix = affordance_to_image(affordance_matrix)
 
-    imgs_comb = np.hstack((image, affordance_matrix))
+    imgs_comb = np.hstack([image, depth_image, affordance_matrix])
     imgs_comb = imgs_comb.astype('uint8')
 
     imgs_comb = Image.fromarray(imgs_comb)
     imgs_comb.save(save_file)
 
+def frequency_drop(mat, resize):
+
+    H, W = mat.shape
+
+    assert(H % resize[0] == 0)
+    assert(W % resize[0] == 0)
+
+    kernel_h = int(H / resize[0])
+    kernel_w = int(W / resize[1])
+
+    rescaled_mat = np.zeros(resize)
 
 
-def mat_process(path, resize=None):
+    for h_idx in range(resize[0]):
+
+        h = h_idx * kernel_h
+
+        for w_idx in range(resize[1]):
+
+            w = w_idx * kernel_w
+
+            kernel = mat[h:h + kernel_h, w:w + kernel_w]
+
+            (values, counts) = np.unique(kernel.reshape(-1), return_counts=True)
+
+            idx = np.argmax(counts)
+            rescaled_mat[h_idx, w_idx] = values[idx]
+
+    return rescaled_mat
+
+
+def crop_center(mat, cropx, cropy):
+
+    h, w = mat.shape
+
+    startx = h // 2 - (cropx//2)
+    starty = w // 2 - (cropy//2)
+
+    return mat[startx:startx+cropx, starty:starty+cropy]
+
+
+def mat_process(path, crop_dim, resize=None):
 
     mat_dict = list(loadmat(path).values())
     mat = np.array(mat_dict[3])
+
+    mat = crop_center(mat, crop_dim[1], crop_dim[2])
+
+    if resize is not None:
+        mat = frequency_drop(mat, resize)
 
     mat_tensor = np.zeros((7, mat.shape[0], mat.shape[1]))
 
@@ -89,16 +159,39 @@ def mat_process(path, resize=None):
 
     return mat_torch
 
-
-def image_process(path, resize=None):
+def depth_image_process(path, crop_dim, resize=None):
 
     image = Image.open(path)
     image.load()
 
     if resize is None:
-         transform_content = transforms.ToTensor()
+         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+                                                 transforms.ToTensor()
+                                                 ])
+
     else:
         transform_content = transforms.Compose([
+            transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+            transforms.Resize(resize),
+            transforms.ToTensor()
+        ])
+
+    transformed = transform_content(image)
+
+    return transformed.float().div(DEPTH_MAX)
+
+
+def image_process(path, crop_dim, resize=None):
+
+    image = Image.open(path)
+    image.load()
+
+    if resize is None:
+         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+                                                 transforms.ToTensor()])
+    else:
+        transform_content = transforms.Compose([
+            transforms.CenterCrop((crop_dim[1], crop_dim[2])),
             transforms.Resize(resize),
             transforms.ToTensor()
         ])
@@ -115,11 +208,12 @@ def orignal_image_size(path):
     return (image.size[1], image.size[0])
 
 
-def wrapper_loader(i, path, resize, load_function):
-    return i, load_function(path, resize)
+def wrapper_loader(i, path, img_dim, resize, load_function):
+    return i, load_function(path, img_dim, resize)
 
 
-def multiloader(paths, load_function, img_dim, resize=None):
+def multiloader(paths, load_function, crop_dim, resize=None):
+
     # multiprocessing
     sharing_strategy = 'file_system'
     multiprocessing.set_sharing_strategy(sharing_strategy)
@@ -130,10 +224,10 @@ def multiloader(paths, load_function, img_dim, resize=None):
     pbar = tqdm(total=N)
 
     if resize is None:
-        images = torch.empty(len(paths), img_dim[0], img_dim[1], img_dim[2])
+        images = torch.empty(len(paths), crop_dim[0], crop_dim[1], crop_dim[2])
 
     else:
-        images = torch.empty(len(paths), img_dim[0], resize[0], resize[1])
+        images = torch.empty(len(paths), crop_dim[0], resize[0], resize[1])
 
     def update(ans):
         images[ans[0]] = ans[1]
@@ -142,9 +236,11 @@ def multiloader(paths, load_function, img_dim, resize=None):
     def error_cl(err):
         print(err)
 
+    # load_function(paths[0], crop_dim, resize)
+
     for idx in range(N):
         path = paths[idx]
-        pool.apply_async(wrapper_loader, args=(idx, path, resize, load_function), callback=update, error_callback=error_cl)
+        pool.apply_async(wrapper_loader, args=(idx, path, crop_dim, resize, load_function), callback=update, error_callback=error_cl)
 
     pool.close()
     pool.join()
@@ -197,8 +293,18 @@ def images_to_torch_package(folder_path, save_path, extension, train_test_ratio=
 
         torch.save((images, labels[idx]), os.path.join(save_path, path_names[idx]))
 
+
     with open(os.path.join(save_path, 'class_to_idx.pkl'), 'wb') as f:
         pickle.dump(class_to_idx, f, pickle.HIGHEST_PROTOCOL)
+
+def load_format_paths(folder_path, extension):
+
+    classes, class_to_idx = find_classes(folder_path)
+    samples = make_dataset(folder_path, class_to_idx, [extension])
+    paths = np.array([s[0] for s in samples])
+    classes = np.array([int(s[1]) for s in samples])
+
+    return paths, classes
 
 
 def build_affordance_dataset(folder_path, save_path, train_test_ratio=0.7, num_samples=None,
@@ -206,17 +312,11 @@ def build_affordance_dataset(folder_path, save_path, train_test_ratio=0.7, num_s
 
     # Load Paths
 
-    classes, class_to_idx = find_classes(folder_path)
-    image_samples = make_dataset(folder_path, class_to_idx, ['.jpg'])
+    image_paths, classes = load_format_paths(folder_path, '.jpg')
 
-    image_paths = np.array([s[0] for s in image_samples])
-    classes = np.array([int(s[1]) for s in image_samples])
+    affordance_paths, _ = load_format_paths(folder_path, '_label.mat')
 
-    affordance_paths = make_dataset(folder_path, class_to_idx, ['_label.mat'])
-    affordance_paths = np.array([s[0] for s in affordance_paths])
-
-
-
+    depth_paths, _ = load_format_paths(folder_path, '.png')
 
     assert(len(affordance_paths) == len(image_paths))
 
@@ -236,22 +336,44 @@ def build_affordance_dataset(folder_path, save_path, train_test_ratio=0.7, num_s
 
     dataset_names = [train_file, test_file]
 
-    img_frame_size = orignal_image_size(image_paths[0])
-    img_dim = (3, img_frame_size[0], img_frame_size[1])
-    affordance_dim = (7, img_frame_size[0], img_frame_size[1])
+    # img_frame_size = orignal_image_size(image_paths[0])
+    crop_frame = (320, 320)
+    img_dim = (3, crop_frame[0], crop_frame[1])
+    affordance_dim = (7, crop_frame[0], crop_frame[1])
 
+    path_names = [train_file, test_file]
 
     for idx, indices in enumerate([train_indices, test_indices]):
         images = multiloader(image_paths[indices], image_process, img_dim, resize=resize)
+        depth_images = multiloader(depth_paths[indices], depth_image_process, (1, crop_frame[0], crop_frame[1]), resize=resize)
+        input = torch.cat([images, depth_images], dim=1)
+
         affordances = multiloader(affordance_paths[indices], mat_process, affordance_dim, resize=resize)
+        torch.save((input, affordances, classes[indices]), os.path.join(save_path, path_names[idx]))
 
-        for idx in range(50):
-            save_affordance_pair(images[idx], affordances[idx],
-                                 save_file='/home/aleksi/hacks/thesis/code/gibson/data/affordances/examples/pair_example_{}.jpg'.format(idx))
-
-        break;
+    for idx in range(50):
+        save_affordance_pair(images[idx], affordances[idx], depth_images[idx],
+                             save_file='/home/aleksi/hacks/thesis/code/gibson/data/affordances/examples/pair_example_{}.jpg'.format(idx))
 
 
+def global_pixel_max(folder_path):
+
+    # Returned: DEPTH_MAX = 3626
+
+    depth_paths, _ = load_format_paths(folder_path, '.png')
+    max_value = 0
+
+    toTensor = transforms.ToTensor()
+
+    for path in depth_paths:
+        img = Image.open(path)
+        img.load()
+        img = toTensor(img)
+
+        if img.max() > max_value:
+            max_value = img.max()
+
+    return max_value
 
 
 def rgb_tensors_grayscale(tensors):
@@ -262,10 +384,6 @@ def rgb_tensors_grayscale(tensors):
 
 
 if __name__ == '__main__':
-    build_affordance_dataset('/home/aleksi/hacks/thesis/code/gibson/data/affordances/part-affordance-dataset/tools',
-                            '/home/aleksi/hacks/thesis/code/gibson/data/affordances', num_samples=100)
 
-#    images_to_torch_package('/home/aleksi/hacks/thesis/code/gibson/data/affordances/part-affordance-dataset/tools',
-#            '/home/aleksi/hacks/thesis/code/gibson/data/affordances', '_label.mat',  num_samples=100,
-#                            train_file='training_affordances.pt', test_file='test_affordances.pt', load_function=mat_process,
-#                            resize=(480, 640), img_dim=9)
+    build_affordance_dataset('/home/aleksi/hacks/thesis/code/gibson/data/affordances/part-affordance-dataset/tools',
+                            '/home/aleksi/hacks/thesis/code/gibson/data/affordances/full_64', num_samples=None, resize=(64, 64))

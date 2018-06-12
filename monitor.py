@@ -34,7 +34,7 @@ class Trainer(Engine):
             self.port = port
             self.visdom_samples = dataloader.visdom_data
             self.epoch_iter = 0
-            self.sample_images_step = 11
+            self.sample_images_step = 4
             
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
@@ -91,11 +91,10 @@ class Trainer(Engine):
 
             if self.epoch_iter % self.sample_images_step == 0:
 
-                self.generate_visdom_samples(self.visdom_samples)
-                self.generate_latent_samples(self.visdom_samples[0])
+                self.generate_visdom_samples()
+                self.generate_latent_samples()
 
             self.epoch_iter += 1
-
 
 
     def initilize_log(self, save_folder, save_name):
@@ -128,6 +127,7 @@ class Trainer(Engine):
             writer.writerow(row)
         
     def generate_visdom_samples(self, samples):
+        samples = self.visdom_samples
 
         # builds a new visdom block for every image 
         sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
@@ -142,10 +142,11 @@ class Trainer(Engine):
 
         samples = np.column_stack((input, output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
 
-
         sample_logger.log(samples)
     
     def generate_latent_samples(self, sample):
+
+        samples = self.visdom_samples[0]
 
         num_samples = 20
         sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
@@ -171,6 +172,69 @@ class Trainer(Engine):
         images = self.model.decoder(latent_samples)
 
         sample_logger.log(images.cpu().detach().numpy())
+
+from tools import affordance_to_array
+
+class AffordanceTrainer(Trainer):
+
+    def __init__(self, dataloader, save_folder=None, save_name=None, log=False, visdom=True, server='localhost',
+                 port=8097, visdom_title="Affordance_logger"):
+
+        super(AffordanceTrainer, self).__init__(dataloader, save_folder=save_folder, save_name=save_name,
+                                                log=log, visdom=visdom, server=server, port=port, visdom_title=visdom_title)
+
+    def generate_visdom_samples(self):
+
+        samples = self.visdom_samples
+
+        # builds a new visdom block for every image
+        sample_logger = VisdomLogger('images', port=self.port, nrow=3, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        state = (samples, False)
+        _, recons = self.model.evaluate(state)
+
+        n = recons.shape[0]
+
+        images = samples[0].cpu().detach().numpy() * 255
+        images = images[:, 0:3] # np.transpose(, (0, 2, 3, 1))
+
+        affordances = np.array([affordance_to_array(samples[1][idx]) for idx in range(n)])
+        built_affordances = np.array([affordance_to_array(recons[idx]) for idx in range(n)])
+
+        samples = np.column_stack((images, affordances, built_affordances))
+        samples = samples.reshape(n * 3, images.shape[1], images.shape[2], images.shape[3])
+
+        sample_logger.log(samples)
+
+    def generate_latent_samples(self):
+
+        sample = self.visdom_samples[0][0]
+
+        num_samples = 20
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        mu, logvar = self.model.latent_distribution(sample)
+
+        stds = torch.exp(0.5*logvar)
+        zdim = stds.shape[1]
+
+        latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
+        latent_samples[:, :] = mu
+
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * 10
+
+        for i in range(zdim):
+
+            c_mu = mu[0][i]
+            c_stds = stds[0][i]
+            z_samples = c_stds.mul(coefs).add(c_mu)
+            latent_samples[i, :, i] = z_samples
+
+        latent_samples = latent_samples.view(num_samples * zdim, zdim)
+        affordances = self.model.decoder(latent_samples)
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples * zdim)])
+
+        sample_logger.log(affordances)
 
 class Demonstrator(Trainer):
 

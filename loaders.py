@@ -4,6 +4,7 @@ import torch
 from torchvision.datasets.mnist import MNIST
 import os
 
+
 class MNISTLoader(object):
     def __init__(self, batch_size, num_processes, debug=False):
         self.batch_size = batch_size
@@ -99,8 +100,39 @@ class ImageLoader(object):
 
         return ds.parallel(batch_size=self.batch_size, num_workers=self.num_processes, shuffle=train)
 
+class AffordanceLoader(ImageLoader):
+
+    def __init__(self, batch_size, num_processes, root_dir,  debug=False):
+
+        self.batch_size = batch_size
+        self.num_processes = num_processes
+        self.debug = debug
+        self.root_dir = root_dir
+        self._intialize_visdom_samples()
+
+    def _intialize_visdom_samples(self):
+
+        images, affordances, _ = torch.load(os.path.join(self.root_dir, 'test.pt'))
+        num_samples = 20
+
+        self.visdom_data = (images[:num_samples], affordances[:num_samples])
+
+    def get_iterator(self, train):
+
+        if train:
+            images, affordances, _ = torch.load(os.path.join(self.root_dir, 'training.pt'))
+        else:
+            images, affordances, _ = torch.load(os.path.join(self.root_dir, 'test.pt'))
+
+        if self.debug:
+            images = images[:100]
+            affordances = affordances[:100]
+
+        ds = tnt.dataset.TensorDataset([images, affordances])
+
+        return ds.parallel(batch_size=self.batch_size, num_workers=self.num_processes, shuffle=train)
 
 if __name__ == '__main__':
 
-    l = ChairsLoader(40, 4)
-    l.get_iterator(True)
+    loader = AffordanceLoader(50, 8, 'data/affordances/full_64', debug=True)
+    loader.get_iterator(True)

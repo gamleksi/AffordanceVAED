@@ -89,3 +89,37 @@ class VAE(nn.Module):
         mu, logvar = self.encoder(x)
 
         return mu, logvar
+
+
+class AffordanceVAE(VAE):
+
+    def __init__(self, encoder, decoder, device, beta=1):
+        super(AffordanceVAE, self).__init__(encoder, decoder, device, beta)
+
+    def _forward(self, x, train):
+        mu, logvar  = self.encoder(x)
+        z = self._reparameterize(mu, logvar, train)
+        return self.decoder(z), mu, logvar
+
+    def _reparameterize(self, mu, logvar, train):
+        if train:
+            std = torch.exp(0.5*logvar)
+            eps = torch.randn_like(std, device=self.device)
+            return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def evaluate(self, state):
+
+        x = Variable(state[0][0].to(self.device))
+        affordances = Variable(state[0][1].to(self.device))
+        train = state[1]
+
+        affordance_recons,  mu, log_var = self._forward(x, train)
+
+        BCE = F.binary_cross_entropy(affordance_recons, affordances, size_average=False)
+
+        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+
+        return BCE + self.beta * KLD, affordance_recons
