@@ -78,6 +78,17 @@ def affordance_to_array(affordance_matrix):
 
     return image.reshape((3, affordance_matrix.shape[1], affordance_matrix.shape[2]))
 
+
+def affordance_layers_to_array(affordance_matrix):
+
+    if torch.is_tensor(affordance_matrix):
+        affordance_matrix = affordance_matrix.detach().cpu().numpy()
+
+    grayscale_layers = np.array([np.stack((affordance_matrix[idx] ,) * 3) * 255 for idx in range(affordance_matrix.shape[0])])
+
+    return grayscale_layers
+
+
 def save_affordance_pair(image, affordance_matrix, depth_image, save_file='testi.jpg'):
 
     if torch.is_tensor(image):

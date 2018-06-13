@@ -5,7 +5,7 @@ from loaders import AffordanceLoader
 from models.chair_model import Decoder, Encoder
 from models.simple_model import AffordanceVAE
 
-from monitor import AffordanceTrainer
+from monitor import AffordanceDemonstrator
 
 def main():
     # Run options
@@ -28,19 +28,20 @@ def main():
     # Data and model
     z_dim = 20
 
-
     encoder = Encoder(z_dim, 4)
     decoder = Decoder(z_dim, 7)
     model = AffordanceVAE(encoder, decoder, device, beta=5).to(device)
+    # model.load('log/affordance_1/affordance_1_simple_cnn_beta_5_dim_20.pth.tar')
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     dataloader = AffordanceLoader(BATCH_SIZE, NUM_PROCESSES, 'data/affordances/full_64', debug=False)
 
-    trainer = AffordanceTrainer(dataloader, model, save_folder='affordance_3', save_name='affordance_3_simple_cnn_beta_5_dim_20',
-                                log=True, visdom=True)
+    # trainer = AffordanceTrainer(dataloader, save_folder='affordance_1', save_name='affordance_1_simple_cnn_beta_5_dim_20', log=True, visdom=True)
 
-    trainer.train(NUM_EPOCHS, optimizer)
+    return AffordanceDemonstrator(dataloader, model, 'affordance_2', 'affordance_2_simple_cnn_beta_5_dim_20')
+    # trainer.latent_distribution_of_visdom_samples()
+
+
 
 
 if __name__ == '__main__':
-    main()
+    monitor = main()
