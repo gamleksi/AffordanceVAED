@@ -115,6 +115,9 @@ class AffordanceVAE(VAE):
         affordances = Variable(state[0][1].to(self.device))
         train = state[1]
 
+        # chooses whether it is in training mode or eval mode.
+        self.train(train)
+
         affordance_recons,  mu, log_var = self._forward(x, train)
 
         BCE = F.binary_cross_entropy(affordance_recons, affordances, size_average=False)

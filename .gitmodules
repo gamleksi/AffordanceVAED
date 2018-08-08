@@ -1,6 +1,3 @@
 [submodule "libs/tnt"]
 	path = libs/tnt
 	url = git@github.com:gamleksi/tnt.git
-[submodule "libs/pixel-cnn-pp"]
-	path = libs/pixel-cnn-pp
-	url = git@github.com:gamleksi/pixel-cnn-pp.git

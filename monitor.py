@@ -61,6 +61,8 @@ class Trainer(Engine):
             self.mlog.update_loss(loss, meter='loss')
 
     def on_start_epoch(self, state):
+
+        self.model.train(True)
         self.reset_meters()
         if self.visdom:
             self.mlog.timer.reset()
@@ -100,19 +102,23 @@ class Trainer(Engine):
     def initilize_log(self, save_folder, save_name):
 
         self.log_path = pathlib.Path('./log/{}'.format(save_folder))
-        # remove a suggested folder or name another
-        assert(not(self.log_path.exists())) 
+
+        assert(not(self.log_path.exists())) # remove a current folder with the same name or rename the suggested folder
         self.log_path.mkdir(parents=True)
         self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name))
-        self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
+        # self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
+        self.encoder_path = self.log_path.joinpath('{}_encoder.pth.tar'.format(save_name))
+        self.decoder_path = self.log_path.joinpath('{}_decoder.pth.tar'.format(save_name))
 
     def save_model(self):
-        torch.save(self.model.endocer.state_dict(), self.model_path)
+        torch.save(self.model.encoder.state_dict(), self.encoder_path)
+        torch.save(self.model.decoder.state_dict(), self.decoder_path)
+        #torch.save(self.model.state_dict(), self.model_path)
 
     def log_csv(self, train_loss, val_loss, improved):
         
         fieldnames = ['train_loss', 'val_loss', 'improved']
-        fields=[train_loss, val_loss, int(improved)]
+        fields = [train_loss, val_loss, int(improved)]
 
         file_exists = os.path.isfile(self.csv_path)
 
@@ -141,37 +147,62 @@ class Trainer(Engine):
         output = recons.cpu().detach().numpy() * 255
 
         samples = np.column_stack((input, output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
-
         sample_logger.log(samples)
-    
-    def generate_latent_samples(self, sample):
 
-        samples = self.visdom_samples[0]
+    def decode_latent_neighbors(self, mu, num_samples, step_size):
 
-        num_samples = 20
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
-
-        mu, logvar = self.model.latent_distribution(sample)
-
-        stds = torch.exp(0.5*logvar)
-        zdim = stds.shape[1]
+        zdim = mu.shape[0]
 
         latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
         latent_samples[:, :] = mu
 
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * 10
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
 
         for i in range(zdim):
 
-            c_mu = mu[0][i] 
-            c_stds = stds[0][i]
-            z_samples = c_stds.mul(coefs).add(c_mu)
-            latent_samples[i, :, i] = z_samples
+            latent_samples[i, :, i] = latent_samples[i, :, i] + coefs
+
 
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
-        images = self.model.decoder(latent_samples)
+        return self.model.decoder(latent_samples)
+
+    def generate_latent_samples(self):
+
+        sample = self.visdom_samples[0]
+
+        num_samples = 21
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        mu, _ = self.model.latent_distribution(sample)
+        images = self.decode_latent_neighbors(mu[0], num_samples, 10)
 
         sample_logger.log(images.cpu().detach().numpy())
+
+class Demonstrator(Trainer):
+
+    def __init__(self,  folder, model_name, model, data_loader, visdom_title='training_results'):
+        super(Demonstrator, self).__init__(data_loader, visdom_title=visdom_title, visdom=True)
+        self.model = model
+        self.load_parameters(folder, model_name)
+
+    def initialize_engine(self):
+        self.hooks['on_sample'] = self.on_sample
+        self.hooks['on_forward'] = self.on_forward
+
+    def load_parameters(self, folder, model_name):
+        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
+        self.model.load_state_dict(torch.load(Path))
+        self.model.eval()
+
+    def evaluate(self):
+        self.test(self.model.evaluate, self.get_iterator(False))
+        val_loss = self.meter_loss.value()[0]
+
+        print('Testing loss: %.4f' % (val_loss))
+
+        self.generate_visdom_samples(self.visdom_samples)
+        self.generate_latent_samples(self.visdom_samples[0])
+
 
 from tools import affordance_to_array, affordance_layers_to_array
 
@@ -211,39 +242,19 @@ class AffordanceTrainer(Trainer):
 
         sample_logger.log(samples)
 
-    def generate_neighboring_affordances(self, sample, num_samples, step_size):
-
-        mu, logvar = self.model.latent_distribution(sample)
-
-        stds = torch.exp(0.5*logvar)
-        zdim = stds.shape[1]
-
-        latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
-        latent_samples[:, :] = mu
-
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
-
-        for i in range(zdim):
-
-            c_mu = mu[0][i]
-            c_stds = stds[0][i]
-            z_samples = c_stds.mul(coefs).add(c_mu)
-            latent_samples[i, :, i] = z_samples
-
-        latent_samples = latent_samples.view(num_samples * zdim, zdim)
-        return self.model.decoder(latent_samples)
-
-    def generate_latent_samples(self, sample=None, step_size=1, num_samples=20, title=None):
+    def generate_latent_samples(self, sample=None, step_size=1, num_samples=21, title=None, env='samples'):
 
         if title is None:
             title = 'Epoch: {}'.format(self.epoch_iter)
 
         if sample is None:
-            sample = self.visdom_samples[0][0]
+            sample = self.visdom_samples[0][3]
 
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': title})
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=env, opts={'title': title})
 
-        affordances = self.generate_neighboring_affordances(sample, num_samples, step_size)
+        mu, _ = self.model.latent_distribution(sample)
+
+        affordances = self.decode_latent_neighbors(mu[0], num_samples, step_size)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
@@ -268,39 +279,72 @@ class AffordanceDemonstrator(AffordanceTrainer):
            self.sample_images_step = 4
 
     def load_parameters(self, folder, model_name):
-        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
-        self.model.load_state_dict(torch.load(Path))
+        # Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
+        # self.model.load_state_dict(torch.load(Path))
+        encoder_path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}_encoder.pth.tar'.format(model_name))
+        decoder_path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}_decoder.pth.tar'.format(model_name))
+        self.model.encoder.load_state_dict(torch.load(encoder_path))
+        self.model.decoder.load_state_dict(torch.load(decoder_path))
         self.model.eval()
 
-    def latent_distribution_of_visdom_samples(self):
+    def latent_distribution_of_visdom_samples(self, env, step_size=10):
 
         for idx in range(self.visdom_samples[0].shape[0]):
             sample = self.visdom_samples[0][idx]
             title = '{} Sample: {}'.format(self.model_name, idx)
-            self.generate_latent_samples(sample=sample, title=title, step_size=10)
+            self.generate_latent_samples(sample=sample, title=title, step_size=step_size, env=env)
 
 
-class Demonstrator(Trainer):
+    def neighbors_of_zero_latent(self, env, title='zero latent development', step_size=10, num_samples = 20):
 
-    def __init__(self,  folder, model_name, model, data_loader, visdom_title='training_results'):
-        super(Demonstrator, self).__init__(data_loader, visdom_title=visdom_title, visdom=True)
-        self.model = model
-        self.load_parameters(folder, model_name)
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=env, opts={'title': title})
 
-    def initialize_engine(self):
-        self.hooks['on_sample'] = self.on_sample
-        self.hooks['on_forward'] = self.on_forward
+        # dirty hack
+        mu, logvar = self.model.latent_distribution(self.visdom_samples[0][0])
+        zdim = mu.shape[1]
 
-    def load_parameters(self, folder, model_name):
-        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name)) 
-        self.model.load_state_dict(torch.load(Path))
-        self.model.eval()
+        affordances = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
 
-    def evaluate(self):
-        self.test(self.model.evaluate, self.get_iterator(False))
-        val_loss = self.meter_loss.value()[0]
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
-        print('Testing loss: %.4f' % (val_loss))
+        sample_logger.log(affordances)
 
-        self.generate_visdom_samples(self.visdom_samples)
-        self.generate_latent_samples(self.visdom_samples[0])
+    def neighbor_channels(self, env, title='zero latent development', step_size=10, num_samples = 10):
+
+        # dirty hack to get zdim: TODO
+
+        sample_logger = VisdomLogger('images', port=self.port, nrow=8, env=env, opts={'title': title})
+        mu, logvar = self.model.latent_distribution(self.visdom_samples[0][0])
+        zdim = mu.shape[1]
+
+        recons = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
+
+        n = zdim * num_samples
+
+        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(n)])
+        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
+
+        built_affordances = np.array([affordance_to_array(recons[idx]) for idx in range(n)])
+
+        samples = np.column_stack((built_affordances, affordance_layers[0],
+                                   affordance_layers[1], affordance_layers[2], affordance_layers[3], affordance_layers[4],
+                                   affordance_layers[5], affordance_layers[6]))
+
+        samples = samples.reshape(samples.shape[0] * 8, 3, 64, 64)
+
+        sample_logger.log(samples)
+
+
+#    def (self, env, title='zero latent development', step_size=10, num_samples = 20):
+#
+#        sample_logger = VisdomLogger('images', port=self.port, nrow=7, env=env, opts={'title': title})
+#
+#        # dirty hack: TODO
+#        mu, _ = self.model.latent_distribution(self.visdom_samples[0][0])
+#        zdim = mu.shape[1]
+#        n = zdim * num_samples
+#
+#        affordances = self.latent_vectors(torch.zeros(zdim), num_samples, step_size)
+#        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
+#
+#        sample_logger.log(affordances)
