@@ -44,7 +44,7 @@ def affordance_to_image(affordance_matrix):
 
     image = np.zeros((affordance_matrix.shape[1], affordance_matrix.shape[2], 3))
 
-    for idx in range(7):
+    for idx in range(2):
 
         indices = affordance_matrix[idx] > 0
         label = idx + 1
@@ -179,7 +179,6 @@ def depth_image_process(path, crop_dim, resize=None):
          transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
                                                  transforms.ToTensor()
                                                  ])
-
     else:
         transform_content = transforms.Compose([
             transforms.CenterCrop((crop_dim[1], crop_dim[2])),
@@ -191,11 +190,34 @@ def depth_image_process(path, crop_dim, resize=None):
 
     return transformed.float().div(DEPTH_MAX)
 
+def depth_rgba_process(path, crop_dim, resize=None):
+
+    image = Image.open(path)
+    image.load()
+    image = image.getchannel(0)
+
+    if resize is None:
+         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+                                                 transforms.ToTensor()
+                                                 ])
+    else:
+        transform_content = transforms.Compose([
+            transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+            transforms.Resize(resize),
+            transforms.ToTensor()
+        ])
+
+    transformed = transform_content(image)
+
+    return transformed.float()
 
 def image_process(path, crop_dim, resize=None):
 
     image = Image.open(path)
     image.load()
+
+    if image.mode == 'RGBA':
+        image = image.convert('RGB')
 
     if resize is None:
          transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
@@ -235,10 +257,9 @@ def multiloader(paths, load_function, crop_dim, resize=None):
     pbar = tqdm(total=N)
 
     if resize is None:
-        images = torch.empty(len(paths), crop_dim[0], crop_dim[1], crop_dim[2])
-
+        images = torch.zeros(N, crop_dim[0], crop_dim[1], crop_dim[2])
     else:
-        images = torch.empty(len(paths), crop_dim[0], resize[0], resize[1])
+        images = torch.zeros(N, crop_dim[0], resize[0], resize[1])
 
     def update(ans):
         images[ans[0]] = ans[1]
@@ -251,7 +272,7 @@ def multiloader(paths, load_function, crop_dim, resize=None):
 
     for idx in range(N):
         path = paths[idx]
-        pool.apply_async(wrapper_loader, args=(idx, path, crop_dim, resize, load_function), callback=update, error_callback=error_cl)
+        pool.apply_async(wrapper_loader, args=(idx, path, crop_dim, resize, load_function), callback=update)
 
     pool.close()
     pool.join()
