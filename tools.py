@@ -190,26 +190,6 @@ def depth_image_process(path, crop_dim, resize=None):
 
     return transformed.float().div(DEPTH_MAX)
 
-def depth_rgba_process(path, crop_dim, resize=None):
-
-    image = Image.open(path)
-    image.load()
-    image = image.getchannel(0)
-
-    if resize is None:
-         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
-                                                 transforms.ToTensor()
-                                                 ])
-    else:
-        transform_content = transforms.Compose([
-            transforms.CenterCrop((crop_dim[1], crop_dim[2])),
-            transforms.Resize(resize),
-            transforms.ToTensor()
-        ])
-
-    transformed = transform_content(image)
-
-    return transformed.float()
 
 def image_process(path, crop_dim, resize=None):
 
@@ -220,7 +200,7 @@ def image_process(path, crop_dim, resize=None):
         image = image.convert('RGB')
 
     if resize is None:
-         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[1], crop_dim[2])),
+         transform_content = transforms.Compose([transforms.CenterCrop((crop_dim[2], crop_dim[2])),
                                                  transforms.ToTensor()])
     else:
         transform_content = transforms.Compose([

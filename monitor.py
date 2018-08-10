@@ -36,7 +36,7 @@ class Trainer(Engine):
             self.port = port
             self.visdom_samples = dataloader.visdom_data
             self.epoch_iter = 0
-            self.sample_images_step = 4
+            self.sample_images_step = 10
             
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
@@ -92,7 +92,6 @@ class Trainer(Engine):
             self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
 
             if self.epoch_iter % self.sample_images_step == 0:
-
                 self.generate_visdom_samples()
                 self.generate_latent_samples()
 
@@ -106,14 +105,14 @@ class Trainer(Engine):
         assert(not(self.log_path.exists())) # remove a current folder with the same name or rename the suggested folder
         self.log_path.mkdir(parents=True)
         self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name))
-        # self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
-        self.encoder_path = self.log_path.joinpath('{}_encoder.pth.tar'.format(save_name))
-        self.decoder_path = self.log_path.joinpath('{}_decoder.pth.tar'.format(save_name))
+        self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
+        #self.encoder_path = self.log_path.joinpath('{}_encoder.pth.tar'.format(save_name))
+        #self.decoder_path = self.log_path.joinpath('{}_decoder.pth.tar'.format(save_name))
 
     def save_model(self):
-        torch.save(self.model.encoder.state_dict(), self.encoder_path)
-        torch.save(self.model.decoder.state_dict(), self.decoder_path)
-        #torch.save(self.model.state_dict(), self.model_path)
+        #torch.save(self.model.encoder.state_dict(), self.encoder_path)
+        #torch.save(self.model.decoder.state_dict(), self.decoder_path)
+        torch.save(self.model.state_dict(), self.model_path)
 
     def log_csv(self, train_loss, val_loss, improved):
         
@@ -161,7 +160,6 @@ class Trainer(Engine):
         for i in range(zdim):
 
             latent_samples[i, :, i] = latent_samples[i, :, i] + coefs
-
 
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
         return self.model.decoder(latent_samples)
@@ -219,7 +217,6 @@ class AffordanceTrainer(Trainer):
         samples = self.visdom_samples
 
         # builds a new visdom block for every image
-        sample_logger = VisdomLogger('images', port=self.port, nrow=10, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
         state = (samples, False)
         _, recons = self.model.evaluate(state)
@@ -234,11 +231,13 @@ class AffordanceTrainer(Trainer):
         affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(n)])
         affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
 
-        samples = np.column_stack((images, affordances, built_affordances, affordance_layers[0],
-                                   affordance_layers[1], affordance_layers[2], affordance_layers[3], affordance_layers[4],
-                                   affordance_layers[5], affordance_layers[6]))
+        affordance_layers = [layer for layer in affordance_layers]
 
-        samples = samples.reshape(n * 10, images.shape[1], images.shape[2], images.shape[3])
+        samples = np.column_stack([images, affordances, built_affordances] + affordance_layers)
+
+        sample_logger = VisdomLogger('images', port=self.port, nrow=len(affordance_layers) + 3, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
+
+        samples = samples.reshape((len(affordance_layers) + 3) * n, images.shape[1], images.shape[2], images.shape[3])
 
         sample_logger.log(samples)
 
