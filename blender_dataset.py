@@ -134,7 +134,7 @@ class BlenderLoader(object):
         self.num_processes = num_processes
         self.include_depth = include_depth
 
-        dataset = BlenderFolder('/opt/data/table_dataset/dataset', self.include_depth, debug=debug)
+        dataset = BlenderFolder('/mnt/dset/dataset', self.include_depth, debug=debug)
         train_size = int(dataset.__len__() * 0.7)
         test_size = dataset.__len__() - train_size
         trainset, testset = torch.utils.data.random_split(dataset, (train_size, test_size))
