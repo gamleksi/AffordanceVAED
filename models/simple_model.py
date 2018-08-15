@@ -97,6 +97,7 @@ class AffordanceVAE(VAE):
         super(AffordanceVAE, self).__init__(encoder, decoder, device, beta)
 
     def _forward(self, x, train):
+        self.train(train)
         mu, logvar  = self.encoder(x)
         z = self._reparameterize(mu, logvar, train)
         return self.decoder(z), mu, logvar
@@ -116,7 +117,6 @@ class AffordanceVAE(VAE):
         train = state[1]
 
         # chooses whether it is in training mode or eval mode.
-        self.train(train)
 
         affordance_recons,  mu, log_var = self._forward(x, train)
 
@@ -126,3 +126,11 @@ class AffordanceVAE(VAE):
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
 
         return BCE + self.beta * KLD, affordance_recons
+
+    # Get result of a sample
+    def reconstruct(self, sample):
+        x = Variable(sample.to(self.device))
+        recon,  _, _ = self._forward(x, False)
+
+        return recon
+

@@ -11,11 +11,15 @@ from tools import save_affordance_pair
 
 class BlenderFolder(data.Dataset):
 
-    def __init__(self, root_path, debug=False):
+    def __init__(self, root_path, include_depth, debug=False):
 
         self.root_path = root_path
         self.images = self.list_file_paths(self.root_path, 'images')
+
+        self.include_depth = include_depth
+
         self.depths = self.list_file_paths(self.root_path, 'depths')
+
         self.affordances = self.list_file_paths(self.root_path, 'affordances')
 
         if debug:
@@ -29,11 +33,15 @@ class BlenderFolder(data.Dataset):
         img = self.loader(img_path)
         img = self.image_transform(img)
 
-        depth_path = self.depths[index]
-        depth = self.loader(depth_path)
-        depth = self.depth_transform(depth)
+        if self.include_depth:
 
-        sample = self.create_sample(img, depth)
+            depth_path = self.depths[index]
+            depth = self.loader(depth_path)
+            depth = self.depth_transform(depth)
+            sample = self.create_sample(img, depth)
+
+        else:
+            sample = img
 
         affordance_path = self.affordances[index]
         affordance = self.loader(affordance_path)
@@ -120,12 +128,13 @@ class BlenderFolder(data.Dataset):
 
 class BlenderLoader(object):
 
-    def __init__(self, batch_size, num_processes, debug=False, num_visdon_samples=20):
+    def __init__(self, batch_size, num_processes, include_depth, debug=False, num_visdon_samples=20):
 
         self.batch_size = batch_size
         self.num_processes = num_processes
+        self.include_depth = include_depth
 
-        dataset = BlenderFolder('/opt/data/table_dataset/dataset', debug=debug)
+        dataset = BlenderFolder('/opt/data/table_dataset/dataset', self.include_depth, debug=debug)
         train_size = int(dataset.__len__() * 0.7)
         test_size = dataset.__len__() - train_size
         trainset, testset = torch.utils.data.random_split(dataset, (train_size, test_size))
@@ -136,7 +145,6 @@ class BlenderLoader(object):
     def _intialize_visdom_samples(self, num_samples):
 
         sample, affordance = self.testset.__getitem__(0)
-
         samples = torch.empty(num_samples, sample.shape[0], sample.shape[1], sample.shape[2])
         affordances = torch.empty(num_samples, affordance.shape[0], affordance.shape[1], affordance.shape[2])
 
@@ -161,9 +169,36 @@ class BlenderLoader(object):
 
         return torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=train, num_workers=self.num_processes)
 
+class BlenderEvaluationLoader(object):
+
+    def __init__(self, include_depth, data_path='/mnt/dset/eval'):
+
+        dataset = BlenderFolder(data_path, include_depth)
+        self.dataset = dataset
+
+
+    def get(self, idx):
+        sample, affordance = self.dataset.__getitem__(idx)
+        return torch.unsqueeze(sample, 0), torch.unsqueeze(affordance, 0)
+
+    def get_samples(self, num_samples):
+
+        sample, affordance = self.get(0)
+        samples = torch.empty(num_samples, sample.shape[1], sample.shape[2], sample.shape[3])
+        affordances = torch.empty(num_samples, affordance.shape[1], affordance.shape[2], affordance.shape[3])
+
+        samples[0] = sample
+        affordances[0] = affordance
+
+        for i in range(1, num_samples):
+            sample, affordance = self.testset.__getitem__(i)
+            samples[i] = sample
+            affordances[i] = affordance
+
+        return samples, affordances
 
 if __name__ == '__main__':
 
-    #loader = BlenderLoader(40, 30, debug=True)
-    dataset = BlenderFolder('/opt/data/table_dataset/dataset', debug=True)
+    BlenderEvaluationLoader(True)
+
 
