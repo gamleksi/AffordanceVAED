@@ -7,19 +7,23 @@ import pathlib
 
 class AffordanceTrainer(Trainer):
 
-    def __init__(self, dataloader, model, save_folder=None, save_name=None, log=False, visdom=True, server='localhost',
-                 port=8097, visdom_title="Affordance_logger"):
+    def __init__(self, dataloader, model, visdom_title, save_folder=None, save_name=None, log=False, visdom=True, server='localhost',
+                 port=8097, env='samples'):
 
         super(AffordanceTrainer, self).__init__(dataloader, model, save_folder=save_folder, save_name=save_name,
                                                 log=log, visdom=visdom, server=server, port=port, visdom_title=visdom_title)
+        self.env = env
 
     def get_results(self, samples):
 
         assert(len(samples.shape) == 4)
-        recons = self.model.evaluate(samples)
+        recons = self.model.reconstruct(samples)
         return recons
 
-    def generate_visdom_samples(self, samples=None, affordances=None, title=None, env='samples'):
+    def generate_visdom_samples(self, samples=None, affordances=None, title=None, env=None):
+
+        if env is None: # TODO
+            env = self.env
 
         if samples == None:
             samples, affordances = self.visdom_samples
@@ -46,12 +50,15 @@ class AffordanceTrainer(Trainer):
         sample_logger = VisdomLogger('images', port=self.port, nrow=len(affordance_layers) + 3, env=env,
                 opts={'title': title})
 
-        samples = samples.reshape((len(affordance_layers) + 3) * n, images.shape[1], images.shape[2], images.shape[3])
+        samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
 
         sample_logger.log(samples)
 
 
-    def generate_latent_samples(self, sample=None, step_size=1, num_samples=21, title=None, env='samples'):
+    def generate_latent_samples(self, sample=None, step_size=1, num_samples=21, title=None, env=None):
+
+        if env is None: # TODO
+            env = self.env
 
         if title is None:
             title = 'Epoch: {}'.format(self.epoch_iter)
