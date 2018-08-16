@@ -181,17 +181,17 @@ class BlenderEvaluationLoader(object):
         sample, affordance = self.dataset.__getitem__(idx)
         return torch.unsqueeze(sample, 0), torch.unsqueeze(affordance, 0)
 
-    def get_samples(self, num_samples):
+    def get_samples(self, sample_list):
 
-        sample, affordance = self.get(0)
-        samples = torch.empty(num_samples, sample.shape[1], sample.shape[2], sample.shape[3])
-        affordances = torch.empty(num_samples, affordance.shape[1], affordance.shape[2], affordance.shape[3])
+        sample, affordance = self.get(sample_list[0])
+        samples = torch.empty(len(sample_list), sample.shape[1], sample.shape[2], sample.shape[3])
+        affordances = torch.empty(len(sample_list), affordance.shape[1], affordance.shape[2], affordance.shape[3])
 
-        samples[0] = sample
-        affordances[0] = affordance
+        samples[0] = sample[0]
+        affordances[0] = affordance[0]
 
-        for i in range(1, num_samples):
-            sample, affordance = self.testset.__getitem__(i)
+        for i in range(1, len(sample_list)):
+            sample, affordance = self.dataset.__getitem__(sample_list[i])
             samples[i] = sample
             affordances[i] = affordance
 

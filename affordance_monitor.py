@@ -25,7 +25,7 @@ class AffordanceTrainer(Trainer):
         if env is None: # TODO
             env = self.env
 
-        if samples == None:
+        if samples is None:
             samples, affordances = self.visdom_samples
 
         if title is None:
@@ -65,6 +65,7 @@ class AffordanceTrainer(Trainer):
 
         if sample is None:
             sample = self.visdom_samples[0][3]
+            sample.unsqueeze_(0)
 
         sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=env, opts={'title': title})
 
@@ -100,22 +101,23 @@ class AffordanceDemonstrator(AffordanceTrainer):
         self.model.load_state_dict(torch.load(Path))
         self.model.eval()
 
-    def latent_distribution_of_sample(self, sample_idx, title=None, step_size=10):
+    def latent_distribution_of_sample(self, sample_idx, title=None, step_size=10, num_samples=10):
 
         if title is None:
             title = 'latent distribution of {} with step size {}'.format(sample_idx + 1, step_size)
 
         sample, _ = self.dataloader.get(sample_idx)
-        self.generate_latent_samples(sample=sample, title=title, step_size=step_size, env=self.model_name)
+        self.generate_latent_samples(sample=sample, title=title, step_size=step_size, env=self.model_name, num_samples=num_samples)
 
-    def list_of_latent_distribution_samples(self, index_list, step_size=10):
+    def list_of_latent_distribution_samples(self, index_list, step_size=10, num_samples=10):
 
         samples, _ = self.dataloader.get_samples(index_list)
 
         for sample_idx in index_list:
-           self.latent_distribution_of_sample(sample_idx, step_size=step_size)
+           self.latent_distribution_of_sample(sample_idx, step_size=step_size, num_samples=num_samples)
 
     def get_result_pair(self, idx, title=None):
+
 
         if title is None:
             title = 'Result of sample {}'.format(idx + 1)
@@ -124,10 +126,11 @@ class AffordanceDemonstrator(AffordanceTrainer):
         self.generate_visdom_samples(samples=sample, affordances=affordance, title=title, env=self.model_name)
 
 
-    def neighbors_of_zero_latent(self, step_size=10, num_samples = 20):
+    def neighbors_of_zero_latent(self, step_size=3, num_samples = 20, padding=2):
 
         title = 'zero latent space. step size {}'.format(step_size)
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, opts={'title': title})
+        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, padding=padding,
+                opts={'title': title})
         zdim = self.get_latent_dim()
 
         affordances = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
@@ -137,39 +140,25 @@ class AffordanceDemonstrator(AffordanceTrainer):
         sample_logger.log(affordances)
 
 
-    def neighbor_channels(self, title='zero latent development', step_size=10, num_samples=10):
-
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, opts={'title': title})
-        zdim = self.get_latent_dim()
-
-        recons = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
-
-        n = zdim * num_samples
-
-        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(n)])
-        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
-
-        affordance_layers = [layer for layer in affordance_layers]
-
-        built_affordances = np.array([affordance_to_array(recons[idx]) for idx in range(n)])
-
-        samples = np.column_stack(built_affordances + affordance_layers)
-
-        samples = samples.reshape(samples.shape[0] * 8, 3, recons.shape[2], recons.shape[3])
-        sample_logger.log(samples)
-
-
-
-#    def (self, env, title='zero latent development', step_size=10, num_samples = 20):
+#    def neighbor_channels(self, title='zero latent development', step_size=10, num_samples=10):
 #
-#        sample_logger = VisdomLogger('images', port=self.port, nrow=7, env=env, opts={'title': title})
+#        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, opts={'title': title})
+#        zdim = self.get_latent_dim()
 #
-#        # dirty hack: TODO
-#        mu, _ = self.model.latent_distribution(self.visdom_samples[0][0])
-#        zdim = mu.shape[1]
+#        recons = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
+#
 #        n = zdim * num_samples
 #
-#        affordances = self.latent_vectors(torch.zeros(zdim), num_samples, step_size)
-#        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
+#        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(n)])
+#        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
 #
-#        sample_logger.log(affordances)
+#        affordance_layers = [layer for layer in affordance_layers]
+#
+#        built_affordances = np.array([affordance_to_array(recons[idx]) for idx in range(n)])
+#
+#        samples = np.column_stack(built_affordances + affordance_layers)
+#
+#        samples = samples.reshape(samples.shape[0] * num_samples, 3, recons.shape[2], recons.shape[3])
+#        sample_logger.log(samples)
+#
+#
