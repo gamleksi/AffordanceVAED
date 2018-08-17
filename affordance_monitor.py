@@ -71,14 +71,17 @@ class AffordanceTrainer(Trainer):
 
         mu, _ = self.model.latent_distribution(sample)
 
-        affordances = self.decode_latent_neighbors(mu[0], num_samples, step_size)
+        affordances, sub_titles = self.decode_latent_neighbors(mu[0], num_samples, step_size)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
         sample_logger.log(affordances)
+        # self.logger.plot_image_list(affordances, mu.shape[1], 'testi', title, sub_titles)
 
 
 from blender_dataset import BlenderEvaluationLoader
+from image_logger import MatplotLogger
+
 
 class AffordanceDemonstrator(AffordanceTrainer):
 
@@ -92,6 +95,7 @@ class AffordanceDemonstrator(AffordanceTrainer):
         self.model_name = model_name
         self.dataloader = BlenderEvaluationLoader(include_depth)
         self.port = port
+        self.logger = MatplotLogger(folder, False)
 
     def get_latent_dim(self):
         return self.latent_dim
@@ -116,29 +120,96 @@ class AffordanceDemonstrator(AffordanceTrainer):
         for sample_idx in index_list:
            self.latent_distribution_of_sample(sample_idx, step_size=step_size, num_samples=num_samples)
 
-    def get_result_pair(self, idx, title=None):
+    def get_result_pair(self, list_idx, title=None):
+
+        num_samples = len(list_idx)
+        samples, affordances = self.dataloader.get_samples(list_idx)
+        recons = self.get_results(samples)
+
+        images = samples[:, :3].cpu().detach().numpy() * 255
+
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples)])
+
+        reconstructions = np.array([affordance_to_array(recons[idx]) for idx in range(num_samples)])
+
+        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(num_samples)])
+        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
+        affordance_layers = [layer for layer in affordance_layers]
+
+        samples = np.column_stack([images, affordances, reconstructions] + affordance_layers)
+
+        samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
+
+        self.logger.plot_image_list(samples, num_samples, 'aaaaa', 'aaaaa')
 
 
-        if title is None:
-            title = 'Result of sample {}'.format(idx + 1)
+    def neighbors_of_zero_latent(self, step_size=3, num_samples = 15):
 
-        sample, affordance = self.dataloader.get(idx)
-        self.generate_visdom_samples(samples=sample, affordances=affordance, title=title, env=self.model_name)
-
-
-    def neighbors_of_zero_latent(self, step_size=3, num_samples = 20, padding=2):
-
-        title = 'zero latent space. step size {}'.format(step_size)
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, padding=padding,
-                opts={'title': title})
+        title = 'zero_latents_{}'.format(step_size)
         zdim = self.get_latent_dim()
 
-        affordances = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
+        affordances, sub_titles = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
-        sample_logger.log(affordances)
+        self.logger.plot_image_list(affordances, zdim, title, title, sub_titles)
 
+
+    def neighbors_of_zero_latent_variable(self, latent_id, step_size=5, num_samples = 100):
+        assert(latent_id > 0)
+        latent_idx = latent_id - 1
+        title = 'laten_id: {}, step_size: {}'.format(latent_id , step_size)
+        zdim = self.get_latent_dim()
+        affordances, sub_titles = self.decode_variable_neighbors(torch.zeros(zdim), num_samples, step_size, latent_idx)
+
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
+        self.logger.plot_image_list(affordances, zdim, title, title, sub_titles)
+
+    def transform_of_samples(self, sample_id1, sample_id2, num_samples = 100):
+
+        assert(sample_id1 > 0 and sample_id2 > 0)
+
+        sample_idx1 = sample_id1 - 1
+        sample_idx2 = sample_id2 - 1
+        sample1, _ = self.dataloader.get(sample_idx1)
+        sample2, _ = self.dataloader.get(sample_idx2)
+        affordances, sub_titles = self.latent_transformation(sample1, sample2, num_samples)
+
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
+        sample1 = sample1[:, :3].cpu().detach().numpy() * 255.
+        sample2 = sample2[:, :3].cpu().detach().numpy() * 255.
+
+        images = np.concatenate((sample1, affordances, sample2), 0)
+
+        title = 'sample1: {}, sample2: {}'.format(sample_id1 , sample_id2)
+        sub_titles = ['sample 1'] + sub_titles + ['sample 2']
+        self.logger.plot_image_list(images, 8, title, title, sub_titles)
+
+    def dimensional_transform_of_samples(self, sample_id1, sample_id2, num_samples = 10):
+
+        assert(sample_id1 > 0 and sample_id2 > 0)
+
+        sample_idx1 = sample_id1 - 1
+        sample_idx2 = sample_id2 - 1
+        sample1, _ = self.dataloader.get(sample_idx1)
+        sample2, _ = self.dataloader.get(sample_idx2)
+
+        zdim = self.get_latent_dim()
+        images = np.zeros((zdim, num_samples + 4, 3, sample1.shape[2], sample1.shape[3]))
+        sub_titles = []
+
+        for latent_idx in range(zdim):
+
+            affordances, dim_titles = self.latent_dimensional_transformation(sample1, sample2, num_samples, latent_idx)
+
+            affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
+
+            images[latent_idx] = np.concatenate((sample1[:, :3].cpu().detach().numpy() * 255., affordances, sample2[:, :3].cpu().detach().numpy() * 255.), 0)
+
+            title = 'dimensional_transform sample1: {}, sample2: {}'.format(sample_id1 , sample_id2)
+            sub_titles = sub_titles + ['sample 1'] + dim_titles + ['sample 2']
+
+        self.logger.plot_image_list(np.concatenate(images, 0), zdim, title, title, sub_titles)
 
 #    def neighbor_channels(self, title='zero latent development', step_size=10, num_samples=10):
 #

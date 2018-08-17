@@ -171,11 +171,11 @@ class BlenderLoader(object):
 
 class BlenderEvaluationLoader(object):
 
-    def __init__(self, include_depth, data_path='/mnt/dset/eval'):
+    def __init__(self, include_depth, dataset=None, data_path='/mnt/dset/eval'):
 
-        dataset = BlenderFolder(data_path, include_depth)
+        if dataset is None:
+            dataset = BlenderFolder(data_path, include_depth)
         self.dataset = dataset
-
 
     def get(self, idx):
         sample, affordance = self.dataset.__getitem__(idx)
@@ -200,5 +200,3 @@ class BlenderEvaluationLoader(object):
 if __name__ == '__main__':
 
     BlenderEvaluationLoader(True)
-
-

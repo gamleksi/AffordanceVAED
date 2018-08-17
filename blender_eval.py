@@ -45,6 +45,7 @@ def main():
         for i in range(10):
             print('YOU ARE NOT USING GPU')
 
+
     device = torch.device('cuda' if use_cuda else 'cpu')
 
     image_channels = 4 if include_depth else 3
@@ -60,12 +61,18 @@ def main():
 if __name__ == '__main__':
     import ipdb
     evaluator = main()
-    #evaluator.list_of_latent_distribution_samples([0, 1, 2], step_size=2, num_samples=8)
-    evaluator.get_result_pair(0)
+    #evaluator.list_of_latent_distribution_samples([0], step_size=2, num_samples=15)
+    evaluator.get_result_pair([0, 1])
     #ipdb.set_trace()
     #evaluator.get_result_pair(1)
     #ipdb.set_trace()
     #evaluator.get_result_pair(2)
-    #evaluator.neighbors_of_zero_latent(step_size=3, num_samples=2, padding=2)
+    #evaluator.neighbors_of_zero_latent(step_size=3, num_samples=15)
+    #evaluator.dimensional_transform_of_samples(3, 10, num_samples = 10)
+
+    #for i in range(4, 104):
+    #    evaluator.decoded_distance_of_samples(i-1, i, num_samples = 100)
+    #for n in range(1, 11):
+    #    evaluator.neighbors_of_zero_latent_variable(n, step_size=1)
     #evaluator.neighbor_channels()
 

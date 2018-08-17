@@ -38,7 +38,7 @@ class Trainer(Engine):
             self.visdom_samples = dataloader.visdom_data
             self.epoch_iter = 0
             self.sample_images_step = 1
-            
+
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
         self.hooks['on_forward'] = self.on_forward
@@ -69,15 +69,15 @@ class Trainer(Engine):
             self.mlog.timer.reset()
 
         state['iterator'] = tqdm(state['iterator'])
-    
+
     def on_end_epoch(self, state):
-        
+
         train_loss = self.meter_loss.value()[0]
         self.reset_meters()
         if self.visdom:
             self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
             self.mlog.reset_meter(mode="Train", iepoch=state['epoch'])
-        
+
             self.test(self.model.evaluate, self.get_iterator(False))
             val_loss = self.meter_loss.value()[0]
 
@@ -93,6 +93,7 @@ class Trainer(Engine):
             self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
 
             if self.epoch_iter % self.sample_images_step == 0:
+
                 self.generate_visdom_samples()
                 self.generate_latent_samples()
 
@@ -111,7 +112,7 @@ class Trainer(Engine):
         torch.save(self.model.state_dict(), self.model_path)
 
     def log_csv(self, train_loss, val_loss, improved):
-        
+
         fieldnames = ['train_loss', 'val_loss', 'improved']
         fields = [train_loss, val_loss, int(improved)]
 
@@ -123,14 +124,15 @@ class Trainer(Engine):
                 writer.writeheader()
             row = {}
             for i, name in enumerate(fieldnames):
-                row[name] = fields[i] 
+                row[name] = fields[i]
 
             writer.writerow(row)
-        
+
     def generate_visdom_samples(self, samples):
+
         samples = self.visdom_samples
 
-        # builds a new visdom block for every image 
+        # builds a new visdom block for every image
         sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
         state = (samples, False)
@@ -147,18 +149,100 @@ class Trainer(Engine):
     def decode_latent_neighbors(self, mu, num_samples, step_size):
 
         zdim = mu.shape[0]
+        if num_samples % 2 == 0:
+            num_samples += 1
+
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
 
         latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
         latent_samples[:, :] = mu
-
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
 
         for i in range(zdim):
 
             latent_samples[i, :, i] = latent_samples[i, :, i] + coefs
 
+        sub_titles = []
+
+        for i in range(zdim):
+            for j in coefs:
+                sub_titles.append('Variable {}, change : {}'.format(i +1 , j))
+
         latent_samples = latent_samples.view(num_samples * zdim, zdim)
-        return self.model.decoder(latent_samples)
+
+        return self.model.decoder(latent_samples), sub_titles
+
+    def latent_transformation(self, sample1, sample2, num_samples):
+
+        mu1, _ = self.model.latent_distribution(sample1)
+        mu2, _ = self.model.latent_distribution(sample2)
+        latent_dim = mu1.shape[0]
+
+        assert(num_samples >= 3)
+
+        unit_vector = (mu2 - mu1) / (num_samples + 1)
+
+        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
+        sub_titles = []
+        for i in range(0, num_samples + 2):
+            latent_samples[i] += i  * unit_vector[0]
+
+            if i == 0:
+                sub_titles.append('Decoded 1')
+            elif i == num_samples + 1:
+                sub_titles.append('Decoded 2')
+            else:
+                sub_titles.append('Latent Step: {}'.format(i))
+
+        decoded_affordances = self.model.decoder(latent_samples)
+
+        return decoded_affordances, sub_titles
+
+    def latent_dimensional_transformation(self, sample1, sample2, num_samples, latent_idx):
+
+        mu1, _ = self.model.latent_distribution(sample1)
+        mu2, _ = self.model.latent_distribution(sample2)
+        latent_dim = mu1.shape[0]
+
+        assert(num_samples >= 3)
+
+        unit_change = (mu2[0, latent_idx] - mu1[0, latent_idx]) / (num_samples + 1)
+
+        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
+        sub_titles = []
+
+        for i in range(0, num_samples + 2):
+            latent_samples[i, latent_dim - 1] += i  * unit_change
+
+            if i == 0:
+                sub_titles.append('Decoded 1')
+            elif i == num_samples + 1:
+                sub_titles.append('Decoded 2')
+                latent_samples[i] = mu2[0]
+            else:
+                sub_titles.append('Step: {}'.format(i))
+                latent_samples[i, latent_idx] += i  * unit_change
+
+        decoded_affordances = self.model.decoder(latent_samples)
+
+        return decoded_affordances, sub_titles
+
+    def decode_variable_neighbors(self, mu, num_samples, step_size, modified_latent_idx):
+
+        zdim = mu.shape[0]
+
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
+
+        latent_samples = torch.zeros(num_samples, zdim).to(self.model.device)
+        latent_samples[:] = mu
+
+        sub_titles = []
+
+        for i, coef in enumerate(coefs):
+
+            latent_samples[i, modified_latent_idx] += coef
+            sub_titles.append('Change: {}'.format(coef))
+
+        return self.model.decoder(latent_samples), sub_titles
 
     def generate_latent_samples(self):
 
@@ -168,7 +252,7 @@ class Trainer(Engine):
         sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
 
         mu, _ = self.model.latent_distribution(sample)
-        images = self.decode_latent_neighbors(mu[0], num_samples, 10)
+        images, sub_titles = self.decode_latent_neighbors(mu[0], num_samples, 10)
 
         sample_logger.log(images.cpu().detach().numpy())
 
