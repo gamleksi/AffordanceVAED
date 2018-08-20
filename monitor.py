@@ -3,7 +3,8 @@ import torch
 
 import torchnet as tnt
 from torchnet.engine import Engine
-from torchnet.logger import MeterLogger, VisdomLogger
+from torchnet.logger import MeterLogger
+from affordance_monitor import AffordanceVisualizer
 
 from tqdm import tqdm
 import csv
@@ -13,10 +14,12 @@ import os
 
 class Trainer(Engine):
 
-    def __init__(self, dataloader, model, save_folder=None, save_name=None, log=False, visdom=True, server='localhost', port=8097, visdom_title="mnist_meterlogger"):
+    def __init__(self, dataloader, model, latent_dim, save_folder=None, save_name=None, log=False, visdom=True, server='localhost', port=8097, visdom_title="mnist_meterlogger"):
         super(Trainer, self).__init__()
 
+        # TODO latent_dim
         self.get_iterator = dataloader.get_iterator
+        self.visualizer = AffordanceVisualizer(dataloader.testset, model, dataloader.include_depth, save_folder, latent_dim)
         self.meter_loss = tnt.meter.AverageValueMeter()
         self.initialize_engine()
 
@@ -30,7 +33,6 @@ class Trainer(Engine):
             self.best_loss = np.inf
         else:
             assert(save_folder is None and save_name is None)
-
         self.visdom = visdom
         if self.visdom:
             self.mlog = MeterLogger(server=server, port=port, title=visdom_title)
@@ -93,9 +95,17 @@ class Trainer(Engine):
             self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
 
             if self.epoch_iter % self.sample_images_step == 0:
-
-                self.generate_visdom_samples()
-                self.generate_latent_samples()
+                ids = [id for id in range(1, 5)]
+                files = ['sample_{}_dist_epoch_{}'.format(id, self.epoch_iter) for id in ids]
+                self.visualizer.list_of_latent_distribution_samples(ids, files, step_size=3)
+                file = 'samples_1-8_pairs_epoch_{}'.format(self.epoch_iter)
+                self.visualizer.get_result_pair(ids, file)
+                file = 'zero_area_epoch_{}'.format(self.epoch_iter)
+                self.visualizer.latent_distribution_of_zero(file, step_size=3)
+                file = 'sample_transform_{}'.format(self.epoch_iter)
+                self.visualizer.transform_of_samples(4, 5, file)
+                #file = 'sample_dimensional_transform_{}'.format(self.epoch_iter)
+                #self.visualizer.dimensional_transform_of_samples(4, 5, file)
 
             self.epoch_iter += 1
 
@@ -128,133 +138,6 @@ class Trainer(Engine):
 
             writer.writerow(row)
 
-    def generate_visdom_samples(self, samples):
-
-        samples = self.visdom_samples
-
-        # builds a new visdom block for every image
-        sample_logger = VisdomLogger('images', port=self.port, nrow=2, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
-
-        state = (samples, False)
-        _, recons = self.model.evaluate(state)
-
-        n = recons.shape[0]
-
-        input = samples.cpu().detach().numpy() * 255
-        output = recons.cpu().detach().numpy() * 255
-
-        samples = np.column_stack((input, output)).reshape(n * 2, samples.shape[1], samples.shape[2], samples.shape[3])
-        sample_logger.log(samples)
-
-    def decode_latent_neighbors(self, mu, num_samples, step_size):
-
-        zdim = mu.shape[0]
-        if num_samples % 2 == 0:
-            num_samples += 1
-
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
-
-        latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
-        latent_samples[:, :] = mu
-
-        for i in range(zdim):
-
-            latent_samples[i, :, i] = latent_samples[i, :, i] + coefs
-
-        sub_titles = []
-
-        for i in range(zdim):
-            for j in coefs:
-                sub_titles.append('Variable {}, change : {}'.format(i +1 , j))
-
-        latent_samples = latent_samples.view(num_samples * zdim, zdim)
-
-        return self.model.decoder(latent_samples), sub_titles
-
-    def latent_transformation(self, sample1, sample2, num_samples):
-
-        mu1, _ = self.model.latent_distribution(sample1)
-        mu2, _ = self.model.latent_distribution(sample2)
-        latent_dim = mu1.shape[0]
-
-        assert(num_samples >= 3)
-
-        unit_vector = (mu2 - mu1) / (num_samples + 1)
-
-        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
-        sub_titles = []
-        for i in range(0, num_samples + 2):
-            latent_samples[i] += i  * unit_vector[0]
-
-            if i == 0:
-                sub_titles.append('Decoded 1')
-            elif i == num_samples + 1:
-                sub_titles.append('Decoded 2')
-            else:
-                sub_titles.append('Latent Step: {}'.format(i))
-
-        decoded_affordances = self.model.decoder(latent_samples)
-
-        return decoded_affordances, sub_titles
-
-    def latent_dimensional_transformation(self, sample1, sample2, num_samples, latent_idx):
-
-        mu1, _ = self.model.latent_distribution(sample1)
-        mu2, _ = self.model.latent_distribution(sample2)
-        latent_dim = mu1.shape[0]
-
-        assert(num_samples >= 3)
-
-        unit_change = (mu2[0, latent_idx] - mu1[0, latent_idx]) / (num_samples + 1)
-
-        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
-        sub_titles = []
-
-        for i in range(0, num_samples + 2):
-            latent_samples[i, latent_dim - 1] += i  * unit_change
-
-            if i == 0:
-                sub_titles.append('Decoded 1')
-            elif i == num_samples + 1:
-                sub_titles.append('Decoded 2')
-                latent_samples[i] = mu2[0]
-            else:
-                sub_titles.append('Step: {}'.format(i))
-                latent_samples[i, latent_idx] += i  * unit_change
-
-        decoded_affordances = self.model.decoder(latent_samples)
-
-        return decoded_affordances, sub_titles
-
-    def decode_variable_neighbors(self, mu, num_samples, step_size, modified_latent_idx):
-
-        zdim = mu.shape[0]
-
-        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
-
-        latent_samples = torch.zeros(num_samples, zdim).to(self.model.device)
-        latent_samples[:] = mu
-
-        sub_titles = []
-
-        for i, coef in enumerate(coefs):
-
-            latent_samples[i, modified_latent_idx] += coef
-            sub_titles.append('Change: {}'.format(coef))
-
-        return self.model.decoder(latent_samples), sub_titles
-
-    def generate_latent_samples(self):
-
-        sample = self.visdom_samples[0]
-
-        num_samples = 21
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env='samples', opts={'title': 'Epoch: {}'.format(self.epoch_iter)})
-
-        mu, _ = self.model.latent_distribution(sample)
-        images, sub_titles = self.decode_latent_neighbors(mu[0], num_samples, 10)
-
-        sample_logger.log(images.cpu().detach().numpy())
 
 class Demonstrator(Trainer):
 

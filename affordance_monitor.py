@@ -2,129 +2,160 @@ from tools import affordance_to_array, affordance_layers_to_array
 import numpy as np
 import torch
 from torchnet.logger import VisdomLogger
-from monitor import Trainer
 import pathlib
 
-class AffordanceTrainer(Trainer):
+class AffordanceVisualizer(object):
 
-    def __init__(self, dataloader, model, visdom_title, save_folder=None, save_name=None, log=False, visdom=True, server='localhost',
-                 port=8097, env='samples'):
+    def __init__(self, dataset, model, include_depth, save_folder, latent_dim):
 
-        super(AffordanceTrainer, self).__init__(dataloader, model, save_folder=save_folder, save_name=save_name,
-                                                log=log, visdom=visdom, server=server, port=port, visdom_title=visdom_title)
-        self.env = env
+        self.dataloader = BlenderEvaluationLoader(include_depth, dataset=dataset)
+        self.model = model
+        self.logger = MatplotLogger(save_folder, True)
+        self.latent_dim = latent_dim
 
-    def get_results(self, samples):
+    def get_latent_dim(self):
+        return self.latent_dim
+
+    def _get_results(self, samples):
 
         assert(len(samples.shape) == 4)
         recons = self.model.reconstruct(samples)
         return recons
 
-    def generate_visdom_samples(self, samples=None, affordances=None, title=None, env=None):
+    def _decode_latent_neighbors(self, mu, num_samples, step_size):
 
-        if env is None: # TODO
-            env = self.env
+        zdim = mu.shape[0]
+        if num_samples % 2 == 0:
+            num_samples += 1
 
-        if samples is None:
-            samples, affordances = self.visdom_samples
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
 
-        if title is None:
-            title = 'Epoch: {}'.format(self.epoch_iter)
+        latent_samples = torch.zeros(zdim, num_samples, zdim).to(self.model.device)
+        latent_samples[:, :] = mu
 
-        recons = self.get_results(samples)
-        num_samples = samples.shape[0]
+        for i in range(zdim):
 
-        images = samples.cpu().detach().numpy() * 255
-        images = images[:, 0:3]
+            latent_samples[i, :, i] = latent_samples[i, :, i] + coefs
 
-        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples)])
+        sub_titles = []
 
-        reconstructions = np.array([affordance_to_array(recons[idx]) for idx in range(num_samples)])
+        for i in range(zdim):
+            for j in coefs:
+                sub_titles.append('Variable {}, change : {}'.format(i +1 , j))
 
-        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(num_samples)])
-        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
-        affordance_layers = [layer for layer in affordance_layers]
+        latent_samples = latent_samples.view(num_samples * zdim, zdim)
 
-        samples = np.column_stack([images, affordances, reconstructions] + affordance_layers)
+        return self.model.decoder(latent_samples), sub_titles
 
-        sample_logger = VisdomLogger('images', port=self.port, nrow=len(affordance_layers) + 3, env=env,
-                opts={'title': title})
+    def _decode_variable_neighbors(self, mu, num_samples, step_size, modified_latent_idx):
 
-        samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
+        zdim = mu.shape[0]
 
-        sample_logger.log(samples)
+        coefs = torch.linspace(-1, 1, num_samples).to(self.model.device) * step_size
+
+        latent_samples = torch.zeros(num_samples, zdim).to(self.model.device)
+        latent_samples[:] = mu
+
+        sub_titles = []
+
+        for i, coef in enumerate(coefs):
+
+            latent_samples[i, modified_latent_idx] += coef
+            sub_titles.append('Change: {}'.format(coef))
+
+        return self.model.decoder(latent_samples), sub_titles
 
 
-    def generate_latent_samples(self, sample=None, step_size=1, num_samples=21, title=None, env=None):
+    def _latent_transformation(self, sample1, sample2, num_samples):
 
-        if env is None: # TODO
-            env = self.env
+        mu1, _ = self.model.latent_distribution(sample1)
+        mu2, _ = self.model.latent_distribution(sample2)
+        latent_dim = mu1.shape[0]
 
-        if title is None:
-            title = 'Epoch: {}'.format(self.epoch_iter)
+        assert(num_samples >= 3)
 
-        if sample is None:
-            sample = self.visdom_samples[0][3]
-            sample.unsqueeze_(0)
+        unit_vector = (mu2 - mu1) / (num_samples + 1)
 
-        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=env, opts={'title': title})
+        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
+        sub_titles = []
+        for i in range(0, num_samples + 2):
+            latent_samples[i] += i  * unit_vector[0]
 
+            if i == 0:
+                sub_titles.append('Decoded 1')
+            elif i == num_samples + 1:
+                sub_titles.append('Decoded 2')
+            else:
+                sub_titles.append('Latent Step: {}'.format(i))
+
+        decoded_affordances = self.model.decoder(latent_samples)
+        return decoded_affordances, sub_titles
+
+    def _latent_dimensional_transformation(self, sample1, sample2, num_samples, latent_idx):
+
+        mu1, _ = self.model.latent_distribution(sample1)
+        mu2, _ = self.model.latent_distribution(sample2)
+        latent_dim = mu1.shape[0]
+
+        assert(num_samples >= 3)
+
+        unit_change = (mu2[0, latent_idx] - mu1[0, latent_idx]) / (num_samples + 1)
+
+        latent_samples = torch.ones(num_samples + 2, latent_dim).to(self.model.device) * mu1[0]
+        sub_titles = []
+
+        for i in range(0, num_samples + 2):
+            latent_samples[i, latent_dim - 1] += i  * unit_change
+
+            if i == 0:
+                sub_titles.append('Decoded 1')
+            elif i == num_samples + 1:
+                sub_titles.append('Decoded 2')
+                latent_samples[i] = mu2[0]
+            else:
+                sub_titles.append('Step: {}'.format(i))
+                latent_samples[i, latent_idx] += i  * unit_change
+
+        decoded_affordances = self.model.decoder(latent_samples)
+
+        return decoded_affordances, sub_titles
+
+    def latent_distribution_of_sample(self, sample_idx, file_name, step_size=10, num_samples=10):
+
+        if file_name is None:
+            file_name = 'latent distribution of {} with step size {}'.format(sample_idx + 1, step_size)
+
+        sample, _ = self.dataloader.get(sample_idx)
         mu, _ = self.model.latent_distribution(sample)
 
-        affordances, sub_titles = self.decode_latent_neighbors(mu[0], num_samples, step_size)
+        affordances, sub_titles = self._decode_latent_neighbors(mu[0], num_samples, step_size)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
-        sample_logger.log(affordances)
-        # self.logger.plot_image_list(affordances, mu.shape[1], 'testi', title, sub_titles)
+        self.logger.plot_image_list(affordances, mu.shape[1], file_name, file_name, sub_titles)
 
+    def latent_distribution_of_zero(self, save_file, step_size=3, num_samples = 15):
 
-from blender_dataset import BlenderEvaluationLoader
-from image_logger import MatplotLogger
+        zdim = self.get_latent_dim()
 
+        affordances, sub_titles = self._decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
 
-class AffordanceDemonstrator(AffordanceTrainer):
+        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
-    def __init__(self, model, folder, model_name, latent_dim, include_depth, server='localhost',
-                 port=8097):
+        self.logger.plot_image_list(affordances, zdim, save_file, save_file, sub_titles)
 
-        self.model = model
-        self.model_name = model_name
-        self.latent_dim = latent_dim
-        self.load_parameters(folder, model_name)
-        self.model_name = model_name
-        self.dataloader = BlenderEvaluationLoader(include_depth)
-        self.port = port
-        self.logger = MatplotLogger(folder, False)
+    def list_of_latent_distribution_samples(self, index_list, file_names, step_size=10, num_samples=10):
 
-    def get_latent_dim(self):
-        return self.latent_dim
+        assert(len(index_list) == len(file_names))
 
-    def load_parameters(self, folder, model_name):
-        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
-        self.model.load_state_dict(torch.load(Path))
-        self.model.eval()
+        for i, sample_idx in enumerate(index_list):
+            self.latent_distribution_of_sample(sample_idx, file_names[i], step_size=step_size, num_samples=num_samples)
 
-    def latent_distribution_of_sample(self, sample_idx, title=None, step_size=10, num_samples=10):
-
-        if title is None:
-            title = 'latent distribution of {} with step size {}'.format(sample_idx + 1, step_size)
-
-        sample, _ = self.dataloader.get(sample_idx)
-        self.generate_latent_samples(sample=sample, title=title, step_size=step_size, env=self.model_name, num_samples=num_samples)
-
-    def list_of_latent_distribution_samples(self, index_list, step_size=10, num_samples=10):
-
-        samples, _ = self.dataloader.get_samples(index_list)
-
-        for sample_idx in index_list:
-           self.latent_distribution_of_sample(sample_idx, step_size=step_size, num_samples=num_samples)
-
-    def get_result_pair(self, list_idx, title=None):
+    def get_result_pair(self, list_idx, file_name):
 
         num_samples = len(list_idx)
         samples, affordances = self.dataloader.get_samples(list_idx)
-        recons = self.get_results(samples)
+        recons = self._get_results(samples)
 
         images = samples[:, :3].cpu().detach().numpy() * 255
 
@@ -140,40 +171,29 @@ class AffordanceDemonstrator(AffordanceTrainer):
 
         samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
 
-        self.logger.plot_image_list(samples, num_samples, 'aaaaa', 'aaaaa')
+        self.logger.plot_image_list(samples, num_samples, file_name, file_name)
 
+    def dimensional_neighbors_of_zero_area(self, latent_dim, file_name, step_size=5, num_samples = 100):
+        assert(latent_dim > 0)
 
-    def neighbors_of_zero_latent(self, step_size=3, num_samples = 15):
-
-        title = 'zero_latents_{}'.format(step_size)
+        latent_idx = latent_dim - 1
         zdim = self.get_latent_dim()
-
-        affordances, sub_titles = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
+        affordances, sub_titles = self._decode_variable_neighbors(torch.zeros(zdim), num_samples, step_size, latent_idx)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
-        self.logger.plot_image_list(affordances, zdim, title, title, sub_titles)
+        self.logger.plot_image_list(affordances, zdim, file_name, sub_titles)
 
+    def transform_of_samples(self, sample_id1, sample_id2, file_name):
 
-    def neighbors_of_zero_latent_variable(self, latent_id, step_size=5, num_samples = 100):
-        assert(latent_id > 0)
-        latent_idx = latent_id - 1
-        title = 'laten_id: {}, step_size: {}'.format(latent_id , step_size)
-        zdim = self.get_latent_dim()
-        affordances, sub_titles = self.decode_variable_neighbors(torch.zeros(zdim), num_samples, step_size, latent_idx)
-
-        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
-        self.logger.plot_image_list(affordances, zdim, title, title, sub_titles)
-
-    def transform_of_samples(self, sample_id1, sample_id2, num_samples = 100):
-
+        num_samples = 100
         assert(sample_id1 > 0 and sample_id2 > 0)
 
         sample_idx1 = sample_id1 - 1
         sample_idx2 = sample_id2 - 1
         sample1, _ = self.dataloader.get(sample_idx1)
         sample2, _ = self.dataloader.get(sample_idx2)
-        affordances, sub_titles = self.latent_transformation(sample1, sample2, num_samples)
+        affordances, sub_titles = self._latent_transformation(sample1, sample2, num_samples)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
         sample1 = sample1[:, :3].cpu().detach().numpy() * 255.
@@ -181,11 +201,10 @@ class AffordanceDemonstrator(AffordanceTrainer):
 
         images = np.concatenate((sample1, affordances, sample2), 0)
 
-        title = 'sample1: {}, sample2: {}'.format(sample_id1 , sample_id2)
         sub_titles = ['sample 1'] + sub_titles + ['sample 2']
-        self.logger.plot_image_list(images, 8, title, title, sub_titles)
+        self.logger.plot_image_list(images, 8, file_name, sub_titles)
 
-    def dimensional_transform_of_samples(self, sample_id1, sample_id2, num_samples = 10):
+    def dimensional_transform_of_samples(self, sample_id1, sample_id2, file_name, num_samples = 10):
 
         assert(sample_id1 > 0 and sample_id2 > 0)
 
@@ -200,36 +219,34 @@ class AffordanceDemonstrator(AffordanceTrainer):
 
         for latent_idx in range(zdim):
 
-            affordances, dim_titles = self.latent_dimensional_transformation(sample1, sample2, num_samples, latent_idx)
+            affordances, dim_titles = self._latent_dimensional_transformation(sample1, sample2, num_samples, latent_idx)
 
             affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
             images[latent_idx] = np.concatenate((sample1[:, :3].cpu().detach().numpy() * 255., affordances, sample2[:, :3].cpu().detach().numpy() * 255.), 0)
 
-            title = 'dimensional_transform sample1: {}, sample2: {}'.format(sample_id1 , sample_id2)
             sub_titles = sub_titles + ['sample 1'] + dim_titles + ['sample 2']
 
-        self.logger.plot_image_list(np.concatenate(images, 0), zdim, title, title, sub_titles)
+        self.logger.plot_image_list(np.concatenate(images, 0), zdim, file_name, file_name, sub_titles)
 
-#    def neighbor_channels(self, title='zero latent development', step_size=10, num_samples=10):
-#
-#        sample_logger = VisdomLogger('images', port=self.port, nrow=num_samples, env=self.model_name, opts={'title': title})
-#        zdim = self.get_latent_dim()
-#
-#        recons = self.decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
-#
-#        n = zdim * num_samples
-#
-#        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(n)])
-#        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
-#
-#        affordance_layers = [layer for layer in affordance_layers]
-#
-#        built_affordances = np.array([affordance_to_array(recons[idx]) for idx in range(n)])
-#
-#        samples = np.column_stack(built_affordances + affordance_layers)
-#
-#        samples = samples.reshape(samples.shape[0] * num_samples, 3, recons.shape[2], recons.shape[3])
-#        sample_logger.log(samples)
-#
-#
+from blender_dataset import BlenderEvaluationLoader
+from image_logger import MatplotLogger
+
+class AffordanceDemonstrator(AffordanceVisualizer):
+
+    def __init__(self, model, folder, model_name, latent_dim, include_depth, server='localhost',
+                 port=8097):
+
+        self.model = model
+        self.model_name = model_name
+        self.latent_dim = latent_dim
+        self.load_parameters(folder, model_name)
+        self.model_name = model_name
+        self.dataloader = BlenderEvaluationLoader(include_depth)
+        self.port = port
+        self.logger = MatplotLogger(folder, False)
+
+    def load_parameters(self, folder, model_name):
+        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
+        self.model.load_state_dict(torch.load(Path))
+        self.model.eval()

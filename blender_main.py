@@ -5,7 +5,7 @@ from blender_dataset import BlenderLoader
 from models.blender_model import Decoder, Encoder
 from models.simple_model import AffordanceVAE
 
-from affordance_monitor import AffordanceTrainer
+from monitor import Trainer
 import argparse
 
 parser = argparse.ArgumentParser(description='Variational Autoencoder for blender data')
@@ -91,9 +91,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     dataloader = BlenderLoader(BATCH_SIZE, NUM_PROCESSES, include_depth, debug=args.debug)
 
-    trainer = AffordanceTrainer(dataloader, model, visdom_title, save_folder=folder_name, save_name=file_name,
-                                log=log, visdom=visdom, env=env)
-
+    trainer = Trainer(dataloader, model, NUM_LATENT_VARIABLES, save_folder=folder_name, save_name=file_name, log=log, visdom=visdom, visdom_title=visdom_title)
     trainer.train(NUM_EPOCHS, optimizer)
 
 

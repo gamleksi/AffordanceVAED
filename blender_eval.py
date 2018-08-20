@@ -61,18 +61,14 @@ def main():
 if __name__ == '__main__':
     import ipdb
     evaluator = main()
-    #evaluator.list_of_latent_distribution_samples([0], step_size=2, num_samples=15)
-    evaluator.get_result_pair([0, 1])
-    #ipdb.set_trace()
-    #evaluator.get_result_pair(1)
-    #ipdb.set_trace()
-    #evaluator.get_result_pair(2)
-    #evaluator.neighbors_of_zero_latent(step_size=3, num_samples=15)
-    #evaluator.dimensional_transform_of_samples(3, 10, num_samples = 10)
-
-    #for i in range(4, 104):
-    #    evaluator.decoded_distance_of_samples(i-1, i, num_samples = 100)
-    #for n in range(1, 11):
-    #    evaluator.neighbors_of_zero_latent_variable(n, step_size=1)
-    #evaluator.neighbor_channels()
-
+    samples = [3, 4, 8, 10, 12]
+    step_size = 3
+    file_names = ['latent_distribution_sample_{}_step_size_{}'.format(sample, step_size) for sample in samples]
+    evaluator.list_of_latent_distribution_samples([3, 4, 8, 10, 12], file_names, step_size=step_size, num_samples=15)
+    #evaluator.dimensional_transform_of_samples(4, 5, 'dimensional_transform_of_samples_{}-{}_samples'.format(4, 5))
+    #evaluator.dimensional_transform_of_samples(10, 12, 'dimensional_transform_of_samples_{}-{}_samples'.format(10, 12))
+    #evaluator.dimensional_transform_of_samples(9, 11, 'dimensional_transform_of_samples_{}-{}_samples'.format(9, 11))
+    #evaluator.get_result_pair([4,5,10, 12], 'result_pairs')
+    evaluator.latent_distribution_of_zero('latent_distribution_of_zero',step_size=1, num_samples=15)
+    evaluator.transform_of_samples(4, 5, 'transform_of_samples_{}-{}_samples'.format(4, 5))
+    evaluator.transform_of_samples(59, 60, 'transform_of_samples_{}-{}_samples'.format(59, 60))
