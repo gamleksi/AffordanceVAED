@@ -51,3 +51,4 @@ class MatplotLogger(object):
             os.makedirs(save_path)
 
         plt.savefig(os.path.join(save_path, '{}.png'.format(file_name)))
+        plt.close(fig)

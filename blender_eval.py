@@ -37,7 +37,7 @@ include_depth = args.depth
 
 def main():
     # Run options
-    use_cuda = torch.cuda.is_available()
+    use_cuda =  torch.cuda.is_available()
 
     if use_cuda:
         print('GPU works!')
@@ -59,16 +59,13 @@ def main():
     return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth)
 
 if __name__ == '__main__':
-    import ipdb
     evaluator = main()
     samples = [3, 4, 8, 10, 12]
     step_size = 3
     file_names = ['latent_distribution_sample_{}_step_size_{}'.format(sample, step_size) for sample in samples]
-    evaluator.list_of_latent_distribution_samples([3, 4, 8, 10, 12], file_names, step_size=step_size, num_samples=15)
-    #evaluator.dimensional_transform_of_samples(4, 5, 'dimensional_transform_of_samples_{}-{}_samples'.format(4, 5))
-    #evaluator.dimensional_transform_of_samples(10, 12, 'dimensional_transform_of_samples_{}-{}_samples'.format(10, 12))
-    #evaluator.dimensional_transform_of_samples(9, 11, 'dimensional_transform_of_samples_{}-{}_samples'.format(9, 11))
-    #evaluator.get_result_pair([4,5,10, 12], 'result_pairs')
+    evaluator.list_of_latent_distribution_samples(samples, file_names, step_size=step_size, num_samples=15)
+    evaluator.dimensional_transform_of_samples(4, 5, 'dimensional_transform_of_samples_{}-{}_samples'.format(4, 5))
+    evaluator.dimensional_transform_of_samples(10, 12, 'dimensional_transform_of_samples_{}-{}_samples'.format(10, 12))
+    evaluator.get_result_pair([4,5,10, 12], 'result_pairs')
     evaluator.latent_distribution_of_zero('latent_distribution_of_zero',step_size=1, num_samples=15)
-    evaluator.transform_of_samples(4, 5, 'transform_of_samples_{}-{}_samples'.format(4, 5))
     evaluator.transform_of_samples(59, 60, 'transform_of_samples_{}-{}_samples'.format(59, 60))

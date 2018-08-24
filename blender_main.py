@@ -3,7 +3,7 @@ import torch.optim as optim
 from blender_dataset import BlenderLoader
 
 from models.blender_model import Decoder, Encoder
-from models.simple_model import AffordanceVAE
+from models.simple_model import AffordanceVAE, AffordanceCapacityVAE
 
 from monitor import Trainer
 import argparse
@@ -15,6 +15,15 @@ parser.add_argument('--num_epoch', default=10000, type=int, help='Number of epoc
 parser.add_argument('--batch_size', default=256, type=int)
 parser.add_argument('--num_workers', default=18, type=int)
 parser.add_argument('--beta', default=4, type=int)
+
+parser.add_argument('--gamma', default=300, type=int)
+parser.add_argument('--capacity_limit', default=30, type=int)
+parser.add_argument('--capacity_change_duration', default=60000, type=int)
+
+parser.add_argument('--capacity', dest='capacity', action='store_true')
+parser.add_argument('--no-capacity', dest='capacity', action='store_false')
+parser.set_defaults(debug=False)
+
 parser.add_argument('--folder_name', default='blender_vae', type=str)
 parser.add_argument('--visdom_title', default=None, type=str)
 parser.add_argument('--env', default=None, type=str)
@@ -41,7 +50,16 @@ LEARNING_RATE = args.lr
 NUM_LATENT_VARIABLES = args.latent_size
 folder_name = args.folder_name
 beta = args.beta
-file_name = '{}_beta_{}_latent_{}'.format(folder_name, beta, NUM_LATENT_VARIABLES)
+
+use_capacity = args.capacity
+gamma = args.gamma
+capacity_limit = args.capacity_limit
+capacity_change_duration = args.capacity_change_duration
+
+if use_capacity:
+    file_name = 'model_g_{}_lim_{}_dur_{}_l_{}_lr_{}'.format(gamma, capacity_limit, capacity_change_duration, NUM_LATENT_VARIABLES, LEARNING_RATE)
+else:
+    file_name = 'model_b_{}_l_{}_lr_{}'.format(beta, NUM_LATENT_VARIABLES. LEARNING_RATE)
 NUM_EPOCHS = args.num_epoch
 BATCH_SIZE = args.batch_size
 NUM_PROCESSES = args.num_workers
@@ -86,7 +104,11 @@ def main():
 
     encoder = Encoder(NUM_LATENT_VARIABLES, image_channels)
     decoder = Decoder(NUM_LATENT_VARIABLES, AFFORDANCE_SIZE)
-    model = AffordanceVAE(encoder, decoder, device, beta=beta).to(device)
+
+    if use_capacity:
+        model = AffordanceCapacityVAE(encoder, decoder, device).to(device)
+    else:
+        model = AffordanceVAE(encoder, decoder, device, beta=beta).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     dataloader = BlenderLoader(BATCH_SIZE, NUM_PROCESSES, include_depth, debug=args.debug)
