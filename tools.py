@@ -36,7 +36,18 @@ AFFORDANCE_RGB = {
 DEPTH_MAX = 3626
 
 
-# -> H, W, C
+import glob
+
+def model_name_search(folder_path):
+
+  for file in os.listdir(folder_path):
+        if file.endswith(".tar"):
+          splitted = file.split('.', 1)
+
+  import ipdb; ipdb.set_trace()
+  return splitted[0]
+
+# -> H, W,
 def affordance_to_image(affordance_matrix):
 
     if torch.is_tensor(affordance_matrix):

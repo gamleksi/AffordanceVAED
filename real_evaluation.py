@@ -8,10 +8,14 @@ from blender_dataset import KinectEvaluationLoader
 import argparse
 from image_logger import MatplotLogger
 
+from tools import model_name_search
+import os
+
+
 parser = argparse.ArgumentParser(description='Variational Autoencoder for blender data')
 parser.add_argument('--latent_size', default=10, type=int, help='Number of latent variables')
 parser.add_argument('--beta', default=4, type=int)
-parser.add_argument('--folder_name', type=str)
+parser.add_argument('--folder_name', default='blender_vae_beta_4_v_1', type=str)
 parser.add_argument('--file_name', type=str)
 parser.add_argument('--depth', dest='depth', action='store_true')
 parser.add_argument('--no-depth', dest='depth', action='store_false')
@@ -31,14 +35,14 @@ assert(folder_name is not None)
 
 file_name = args.file_name
 if file_name is None:
-    file_name = '{}_beta_{}_latent_{}'.format(folder_name, beta, NUM_LATENT_VARIABLES)
+    file_name = model_name_search(os.path.join('log', folder_name))
 
 debug = args.debug
 include_depth = args.depth
 
 def main():
     # Run options
-    use_cuda =  torch.cuda.is_available()
+    use_cuda = False # torch.cuda.is_available()
 
     if use_cuda:
         print('GPU works!')
