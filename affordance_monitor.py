@@ -159,17 +159,19 @@ class AffordanceVisualizer(object):
 
         images = samples[:, :3].cpu().detach().numpy() * 255
 
-        affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples)])
-
         reconstructions = np.array([affordance_to_array(recons[idx]) for idx in range(num_samples)])
 
         affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(num_samples)])
         affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
         affordance_layers = [layer for layer in affordance_layers]
 
-        samples = np.column_stack([images, affordances, reconstructions] + affordance_layers)
-
-        samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
+        if affordances is not None:
+            affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples)])
+            samples = np.column_stack([images, affordances, reconstructions] + affordance_layers)
+            samples = samples.reshape((len(affordance_layers) + 3) * num_samples, images.shape[1], images.shape[2], images.shape[3])
+        else:
+            samples = np.column_stack([images, reconstructions] + affordance_layers)
+            samples = samples.reshape((len(affordance_layers) + 2) * num_samples, images.shape[1], images.shape[2], images.shape[3])
 
         self.logger.plot_image_list(samples, num_samples, file_name, file_name)
 
@@ -234,17 +236,23 @@ from image_logger import MatplotLogger
 
 class AffordanceDemonstrator(AffordanceVisualizer):
 
-    def __init__(self, model, folder, model_name, latent_dim, include_depth, server='localhost',
-                 port=8097):
+    def __init__(self, model, folder, model_name, latent_dim, include_depth, logger=None, server='localhost',
+                 port=8097, loader=None):
 
         self.model = model
         self.model_name = model_name
         self.latent_dim = latent_dim
         self.load_parameters(folder, model_name)
         self.model_name = model_name
-        self.dataloader = BlenderEvaluationLoader(include_depth)
+        if loader is None:
+            self.dataloader = BlenderEvaluationLoader(include_depth)
+        else:
+            self.dataloader = loader
         self.port = port
-        self.logger = MatplotLogger(folder, False)
+        if logger is None:
+            self.logger = MatplotLogger(folder, False)
+        else:
+            self.logger = logger
 
     def load_parameters(self, folder, model_name):
         Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))

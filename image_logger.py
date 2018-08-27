@@ -17,10 +17,17 @@ class VisdomWrapper(object):
 
 class MatplotLogger(object):
 
-    def __init__(self, folder, train, figsize = (30, 20)):
-        self.folder = folder
-        self.train_mode = train
+    def __init__(self, model_folder, train, figsize = (30, 20), save_folder=None):
+
         self.figure_size = figsize
+        if save_folder is None:
+            if train:
+                save_folder = 'train_results'
+            else:
+                save_folder = 'eval'
+
+        self.save_path = os.path.join('log', model_folder, save_folder)
+
 
     def plot_image_list(self, images, number_of_rows, file_name, main_title, sub_titles = None):
 
@@ -42,13 +49,9 @@ class MatplotLogger(object):
 
         plt.tight_layout()
 
-        if self.train_mode:
-            save_path = os.path.join('log', self.folder, 'train_results')
-        else:
-            save_path = os.path.join('log', self.folder, 'eval')
 
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
 
-        plt.savefig(os.path.join(save_path, '{}.png'.format(file_name)))
+        plt.savefig(os.path.join(self.save_path, '{}.png'.format(file_name)))
         plt.close(fig)

@@ -59,7 +59,7 @@ capacity_change_duration = args.capacity_change_duration
 if use_capacity:
     file_name = 'model_g_{}_lim_{}_dur_{}_l_{}_lr_{}'.format(gamma, capacity_limit, capacity_change_duration, NUM_LATENT_VARIABLES, LEARNING_RATE)
 else:
-    file_name = 'model_b_{}_l_{}_lr_{}'.format(beta, NUM_LATENT_VARIABLES. LEARNING_RATE)
+    file_name = 'model_b_{}_l_{}_lr_{}'.format(beta, NUM_LATENT_VARIABLES, LEARNING_RATE)
 NUM_EPOCHS = args.num_epoch
 BATCH_SIZE = args.batch_size
 NUM_PROCESSES = args.num_workers

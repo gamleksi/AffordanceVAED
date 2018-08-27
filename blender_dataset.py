@@ -11,18 +11,22 @@ from tools import save_affordance_pair
 
 class BlenderFolder(data.Dataset):
 
-    def __init__(self, root_path, include_depth, debug=False):
+    def __init__(self, root_path, include_depth, include_affordance=True, debug=False):
 
         self.root_path = root_path
         self.images = self.list_file_paths(self.root_path, 'images')
 
         self.include_depth = include_depth
+        self.include_affordance = include_affordance
 
-        self.depths = self.list_file_paths(self.root_path, 'depths')
+        if self.include_depth:
+            self.depths = self.list_file_paths(self.root_path, 'depths')
 
-        self.affordances = self.list_file_paths(self.root_path, 'affordances')
+        if self.include_affordance:
+            self.affordances = self.list_file_paths(self.root_path, 'affordances')
 
         if debug:
+
             self.images = self.images[:100]
             self.depths = self.depths[:100]
             self.affordances = self.affordances[:100]
@@ -34,7 +38,6 @@ class BlenderFolder(data.Dataset):
         img = self.image_transform(img)
 
         if self.include_depth:
-
             depth_path = self.depths[index]
             depth = self.loader(depth_path)
             depth = self.depth_transform(depth)
@@ -43,10 +46,14 @@ class BlenderFolder(data.Dataset):
         else:
             sample = img
 
-        affordance_path = self.affordances[index]
-        affordance = self.loader(affordance_path)
+        if self.include_affordance:
 
-        target = self.affordance_transform(affordance)
+            affordance_path = self.affordances[index]
+            affordance = self.loader(affordance_path)
+
+            target = self.affordance_transform(affordance)
+        else:
+            target = None
 
         return sample, target
 
@@ -98,7 +105,7 @@ class BlenderFolder(data.Dataset):
         if image.mode == 'RGBA':
             image = image.convert('RGB')
 
-        transform_content = transforms.Compose([transforms.CenterCrop((image.size[1], image.size[0])),
+        transform_content = transforms.Compose([transforms.ColorJitter(), transforms.Resize((image.size[1], image.size[0])),
                                                      transforms.ToTensor()])
         transformed = transform_content(image)
         return transformed
@@ -179,6 +186,8 @@ class BlenderEvaluationLoader(object):
 
     def get(self, idx):
         sample, affordance = self.dataset.__getitem__(idx)
+
+
         return torch.unsqueeze(sample, 0), torch.unsqueeze(affordance, 0)
 
     def get_samples(self, sample_list):
@@ -196,6 +205,72 @@ class BlenderEvaluationLoader(object):
             affordances[i] = affordance
 
         return samples, affordances
+
+
+class KinectFolder(BlenderFolder):
+
+    def __init__(self, root_path, include_depth):
+
+        super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False)
+
+    def image_transform(self, image):
+
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
+
+        transform_content = transforms.Compose([transforms.Resize((160, 320)),
+                                             transforms.ToTensor()
+                                             ])
+
+        transformed = transform_content(image)
+        return transformed
+
+    def depth_transform(self, image):
+
+        image = image.getchannel(0)
+
+        transform_content = transforms.Compose([transforms.Resize((160, 320)),
+                                             transforms.ToTensor()
+                                             ])
+
+        transformed = transform_content(image)
+        transformed = transformed.float()
+
+        return transformed
+
+    def generate_examples(self, num_examples=10, folder_name='examples'):
+
+        for idx in range(num_examples):
+            sample, target = self.__getitem__(idx)
+            img = sample[:3]
+            depth = torch.unsqueeze(sample[3], 0)
+
+            save_affordance_pair(img, target, depth,
+                                 save_file=os.path.join(self.root_path, folder_name, 'pair_example_{}.jpg'.format(idx)))
+
+class KinectEvaluationLoader(object):
+
+    def __init__(self, include_depth, data_path='/home/aleksi/hacks/vae_ws/real_images'):
+
+        dataset = KinectFolder(data_path, include_depth)
+        self.dataset = dataset
+
+    def get(self, idx):
+        sample, _ = self.dataset.__getitem__(idx)
+        return torch.unsqueeze(sample, 0), None
+
+    def get_samples(self, sample_list):
+
+        sample, _ = self.get(sample_list[0])
+        samples = torch.empty(len(sample_list), sample.shape[1], sample.shape[2], sample.shape[3])
+
+        samples[0] = sample[0]
+
+        for i in range(1, len(sample_list)):
+            sample, _ = self.dataset.__getitem__(sample_list[i])
+            samples[i] = sample
+
+        return samples, None
 
 if __name__ == '__main__':
 
