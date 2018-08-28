@@ -11,7 +11,7 @@ from tools import save_affordance_pair
 
 class BlenderFolder(data.Dataset):
 
-    def __init__(self, root_path, include_depth, include_affordance=True, debug=False):
+    def __init__(self, root_path, include_depth, include_affordance=True, debug=False, include_randomness=True):
 
         self.root_path = root_path
         self.images = self.list_file_paths(self.root_path, 'images')
@@ -24,6 +24,8 @@ class BlenderFolder(data.Dataset):
 
         if self.include_affordance:
             self.affordances = self.list_file_paths(self.root_path, 'affordances')
+
+        self.include_randomness = True
 
         if debug:
 
@@ -100,13 +102,23 @@ class BlenderFolder(data.Dataset):
 
         return affordance_torch
 
+    def gaussian_noise(self, img, mean=0, stddev=1):
+        noise = Variable(img.data.new(ins.size()).normal_(mean, stddev))
+        return noise
+
+
     def image_transform(self, image):
 
         if image.mode == 'RGBA':
             image = image.convert('RGB')
 
-        transform_content = transforms.Compose([transforms.ColorJitter(), transforms.Resize((image.size[1], image.size[0])),
-                                                     transforms.ToTensor()])
+        if self.include_randomness:
+            noise = gaussian_noise(image)
+            image = image + noise
+            transform_content = transforms.Compose([transforms.ColorJitter(), transforms.ToTensor()])
+        else:
+            transform_content = transforms.Compose([transforms.ToTensor()])
+
         transformed = transform_content(image)
         return transformed
 
@@ -114,9 +126,7 @@ class BlenderFolder(data.Dataset):
 
         image = image.getchannel(0)
 
-        transform_content = transforms.Compose([transforms.CenterCrop((image.size[1], image.size[0])),
-                                             transforms.ToTensor()
-                                             ])
+        transform_content = transforms.Compose([transforms.CenterCrop((image.size[1], image.size[0])), transforms.ToTensor()])
 
         transformed = transform_content(image)
 
@@ -273,5 +283,5 @@ class KinectEvaluationLoader(object):
         return samples, None
 
 if __name__ == '__main__':
-
-    BlenderEvaluationLoader(True)
+    loader = BlenderEvaluationLoader(True)
+    loader.get(0)
