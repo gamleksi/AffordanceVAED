@@ -42,7 +42,7 @@ include_depth = args.depth
 
 def main():
     # Run options
-    use_cuda = False # torch.cuda.is_available()
+    use_cuda = torch.cuda.is_available()
 
     if use_cuda:
         print('GPU works!')
