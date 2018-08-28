@@ -9,6 +9,8 @@ import torch.utils.data as data
 from tools import save_affordance_pair
 
 
+
+
 class BlenderFolder(data.Dataset):
 
     def __init__(self, root_path, include_depth, include_affordance=True, debug=False, include_randomness=True):
@@ -26,6 +28,8 @@ class BlenderFolder(data.Dataset):
             self.affordances = self.list_file_paths(self.root_path, 'affordances')
 
         self.include_randomness = True
+        self.graynoise = 5
+        self.imgnoise = 15
 
         if debug:
 
@@ -102,10 +106,6 @@ class BlenderFolder(data.Dataset):
 
         return affordance_torch
 
-    def gaussian_noise(self, img, mean=0, stddev=1):
-        noise = Variable(img.data.new(ins.size()).normal_(mean, stddev))
-        return noise
-
 
     def image_transform(self, image):
 
@@ -113,24 +113,28 @@ class BlenderFolder(data.Dataset):
             image = image.convert('RGB')
 
         if self.include_randomness:
-            noise = gaussian_noise(image)
-            image = image + noise
             transform_content = transforms.Compose([transforms.ColorJitter(), transforms.ToTensor()])
+            transformed = transform_content(image)
+            transformed += torch.randn(transformed.shape) * self.imgnoise / 255
         else:
             transform_content = transforms.Compose([transforms.ToTensor()])
+            transformed = transform_content(image)
 
-        transformed = transform_content(image)
         return transformed
 
     def depth_transform(self, image):
 
         image = image.getchannel(0)
 
-        transform_content = transforms.Compose([transforms.CenterCrop((image.size[1], image.size[0])), transforms.ToTensor()])
-
+        transform_content = transforms.Compose([transforms.ToTensor()])
         transformed = transform_content(image)
 
-        return transformed.float()
+        if self.include_depth:
+            transformed += torch.randn(transformed.shape) * self.graynoise / 255
+
+        transformed  = transformed.max() - transformed / (transformed.max() - transformed.min())
+
+        return transformed
 
     def generate_examples(self, num_examples=10, folder_name='examples'):
 
@@ -221,7 +225,7 @@ class KinectFolder(BlenderFolder):
 
     def __init__(self, root_path, include_depth):
 
-        super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False)
+        super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False, include_randomness=False)
 
     def image_transform(self, image):
 
@@ -282,6 +286,18 @@ class KinectEvaluationLoader(object):
 
         return samples, None
 
+
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     loader = BlenderEvaluationLoader(True)
-    loader.get(0)
+
+    for i in range(20):
+        img, afford = loader.get(i)
+        img = img[0]
+        img = img.numpy()
+        gray = np.stack([img[3], img[3], img[3]])
+        img = img[:3]
+        plt.imsave('test_samples/{}_img.png'.format(i), img.transpose(1, 2, 0))
+        plt.imsave('test_samples/{}_depth.png'.format(i), gray.transpose(1, 2, 0))
+
+

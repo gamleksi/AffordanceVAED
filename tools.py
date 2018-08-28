@@ -44,7 +44,6 @@ def model_name_search(folder_path):
         if file.endswith(".tar"):
           splitted = file.split('.', 1)
 
-  import ipdb; ipdb.set_trace()
   return splitted[0]
 
 # -> H, W,
