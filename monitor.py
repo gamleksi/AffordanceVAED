@@ -5,10 +5,10 @@ import torchnet as tnt
 from torchnet.engine import Engine
 from torchnet.logger import MeterLogger
 from affordance_monitor import AffordanceVisualizer
-
+from blender_dataset import KinectEvaluationLoader, BlenderEvaluationLoader
+from image_logger import MatplotLogger
 from tqdm import tqdm
 import csv
-import pathlib
 import os
 
 
@@ -19,7 +19,9 @@ class Trainer(Engine):
 
         # TODO latent_dim
         self.get_iterator = dataloader.get_iterator
-        self.visualizer = AffordanceVisualizer(dataloader.testset, model, dataloader.include_depth, save_folder, latent_dim)
+        include_depth = dataloader.include_depth
+        self.visualizer = AffordanceVisualizer(model, BlenderEvaluationLoader(include_depth, dataset=dataloader.testset), MatplotLogger(save_folder, True), latent_dim)
+        self.kinect_visualizer = AffordanceVisualizer(model, KinectEvaluationLoader(include_depth), MatplotLogger(save_folder, False, save_folder='real_image_results'), latent_dim)
         self.meter_loss = tnt.meter.AverageValueMeter()
         self.initialize_engine()
 
@@ -34,19 +36,15 @@ class Trainer(Engine):
         else:
             assert(save_folder is None and save_name is None)
         self.visdom = visdom
-        if self.visdom:
-            self.mlog = MeterLogger(server=server, port=port, title=visdom_title)
-            self.port = port
-            self.visdom_samples = dataloader.visdom_data
-            self.epoch_iter = 0
-            self.sample_images_step = 1
+        self.mlog = MeterLogger(server=server, port=port, title=visdom_title)
+        self.epoch_iter = 0
+        self.sample_images_step = 1
 
     def initialize_engine(self):
         self.hooks['on_sample'] = self.on_sample
         self.hooks['on_forward'] = self.on_forward
         self.hooks['on_start_epoch'] = self.on_start_epoch
         self.hooks['on_end_epoch'] = self.on_end_epoch
-
 
     def train(self, num_epoch, optimizer):
         super(Trainer, self).train(self.model.evaluate, self.get_iterator(True), maxepoch=num_epoch, optimizer=optimizer)
@@ -77,6 +75,7 @@ class Trainer(Engine):
         train_loss = self.meter_loss.value()[0]
         self.reset_meters()
         if self.visdom:
+
             self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
             self.mlog.reset_meter(mode="Train", iepoch=state['epoch'])
 
@@ -90,12 +89,15 @@ class Trainer(Engine):
                 if val_loss < self.best_loss:
                     self.save_model()
                     self.best_loss = val_loss
+
         if self.visdom:
+
             self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
             self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
 
             if self.epoch_iter % self.sample_images_step == 0:
-                ids = [id for id in range(1, 5)]
+
+                ids = [id for id in range(1, 3)]
                 files = ['sample_{}_dist_epoch_{}'.format(id, self.epoch_iter) for id in ids]
                 self.visualizer.list_of_latent_distribution_samples(ids, files, step_size=3)
                 file = 'samples_1-8_pairs_epoch_{}'.format(self.epoch_iter)
@@ -104,19 +106,21 @@ class Trainer(Engine):
                 self.visualizer.latent_distribution_of_zero(file, step_size=3)
                 file = 'sample_transform_{}'.format(self.epoch_iter)
                 self.visualizer.transform_of_samples(4, 5, file)
-                #file = 'sample_dimensional_transform_{}'.format(self.epoch_iter)
-                #self.visualizer.dimensional_transform_of_samples(4, 5, file)
+
+                for s in range(int(30/5)): # HARD CODED TODO
+                    idx = s * 5
+                    self.kinect_visualizer.get_result_pair(np.arange(idx, idx + 5), 'samples_{}-{}_epoch_{}'.format(idx + 1, idx + 6, self.epoch_iter))
 
             self.epoch_iter += 1
 
     def initilize_log(self, save_folder, save_name):
 
-        self.log_path = pathlib.Path('./log/{}'.format(save_folder))
+        self.log_path = 'log/{}'.format(save_folder)
 
-        assert(not(self.log_path.exists())) # remove a current folder with the same name or rename the suggested folder
-        self.log_path.mkdir(parents=True)
-        self.csv_path = self.log_path.joinpath('log_{}.csv'.format(save_name))
-        self.model_path = self.log_path.joinpath('{}.pth.tar'.format(save_name))
+        assert(not(os.path.exists(self.log_path))) # remove a current folder with the same name or rename the suggested folder
+        os.makedirs(self.log_path)
+        self.csv_path = os.path.join(self.log_path, 'log_{}.csv'.format(save_name))
+        self.model_path = os.path.join(self.log_path, '{}.pth.tar'.format(save_name))
 
     def save_model(self):
         torch.save(self.model.state_dict(), self.model_path)
@@ -151,7 +155,7 @@ class Demonstrator(Trainer):
         self.hooks['on_forward'] = self.on_forward
 
     def load_parameters(self, folder, model_name):
-        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
+        Path = os.path.join('log/{}'.format(folder), '{}.pth.tar'.format(model_name))
         self.model.load_state_dict(torch.load(Path))
         self.model.eval()
 

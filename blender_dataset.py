@@ -33,9 +33,11 @@ class BlenderFolder(data.Dataset):
 
         if debug:
 
-            self.images = self.images[:100]
-            self.depths = self.depths[:100]
-            self.affordances = self.affordances[:100]
+            self.images = self.images[:50]
+            if self.include_depth:
+                self.depths = self.depths[:50]
+            if self.include_affordance:
+                self.affordances = self.affordances[:50]
 
     def __getitem__(self, index):
 
@@ -161,24 +163,25 @@ class BlenderLoader(object):
         trainset, testset = torch.utils.data.random_split(dataset, (train_size, test_size))
         self.trainset = trainset
         self.testset = testset
-        self._intialize_visdom_samples(num_visdon_samples)
 
-    def _intialize_visdom_samples(self, num_samples):
-
-        sample, affordance = self.testset.__getitem__(0)
-        samples = torch.empty(num_samples, sample.shape[0], sample.shape[1], sample.shape[2])
-        affordances = torch.empty(num_samples, affordance.shape[0], affordance.shape[1], affordance.shape[2])
-
-        samples[0] = sample
-        affordances[0] = affordance
-
-        for i in range(1, num_samples):
-            sample, affordance = self.testset.__getitem__(i)
-            samples[i] = sample
-            affordances[i] = affordance
-
-        self.visdom_data = (samples, affordances)
-
+#        self._intialize_visdom_samples(num_visdon_samples)
+#
+#    def _intialize_visdom_samples(self, num_samples):
+#
+#        sample, affordance = self.testset.__getitem__(0)
+#        samples = torch.empty(num_samples, sample.shape[0], sample.shape[1], sample.shape[2])
+#        affordances = torch.empty(num_samples, affordance.shape[0], affordance.shape[1], affordance.shape[2])
+#
+#        samples[0] = sample
+#        affordances[0] = affordance
+#
+#        for i in range(1, num_samples):
+#            sample, affordance = self.testset.__getitem__(i)
+#            samples[i] = sample
+#            affordances[i] = affordance
+#
+#        self.visdom_data = (samples, affordances)
+#
 
     def get_iterator(self, train):
 
@@ -232,7 +235,7 @@ class KinectFolder(BlenderFolder):
         if image.mode == 'RGBA':
             image = image.convert('RGB')
 
-        transform_content = transforms.Compose([transforms.Resize((160, 320)),
+        transform_content = transforms.Compose([transforms.CenterCrop((160, 320)),
                                              transforms.ToTensor()
                                              ])
 
@@ -243,7 +246,7 @@ class KinectFolder(BlenderFolder):
 
         image = image.getchannel(0)
 
-        transform_content = transforms.Compose([transforms.Resize((160, 320)),
+        transform_content = transforms.Compose([transforms.CenterCrop((160, 320)),
                                              transforms.ToTensor()
                                              ])
 

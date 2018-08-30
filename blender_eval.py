@@ -55,7 +55,6 @@ def main():
     encoder = Encoder(NUM_LATENT_VARIABLES, image_channels)
     decoder = Decoder(NUM_LATENT_VARIABLES, AFFORDANCE_SIZE)
     model = AffordanceVAE(encoder, decoder, device, beta=beta).to(device)
-
     return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth)
 
 if __name__ == '__main__':

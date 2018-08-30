@@ -54,14 +54,21 @@ class VAE(nn.Module):
         self.decoder = decoder
         self.beta = beta
 
+    def set_mode(self, train):
+        if train:
+            self.train()
+        else:
+            self.eval()
+
     def _forward(self, x, train):
+        self.set_mode(train)
         mu, logvar  = self.encoder(x)
         z = self._reparameterize(mu, logvar, train)
         return self.decoder(z), mu, logvar
 
     def _reparameterize(self, mu, logvar, train):
         if train:
-            std = torch.exp(0.5*logvar)
+            std = torch.exp(0.5*logvar, device=self.device)
             eps = torch.randn_like(std, device=self.device)
             return eps.mul(std).add_(mu)
         else:
@@ -82,11 +89,17 @@ class VAE(nn.Module):
         return BCE + self.beta * KLD, x_recon
 
     def latent_distribution(self, sample):
-
+        self.set_mode(False)
         x = Variable(sample.to(self.device))
         mu, logvar = self.encoder(x)
 
         return mu, logvar
+
+    def reconstruct(self, sample):
+        x = Variable(sample).to(self.device)
+        recon,  _, _ = self._forward(x, False)
+
+        return recon
 
 
 class AffordanceVAE(VAE):
@@ -100,6 +113,7 @@ class AffordanceVAE(VAE):
         affordances = Variable(state[0][1].to(self.device))
         train = state[1]
 
+
         # chooses whether it is in training mode or eval mode.
 
         affordance_recons,  mu, log_var = self._forward(x, train)
@@ -111,12 +125,6 @@ class AffordanceVAE(VAE):
 
         return BCE + self.beta * KLD, affordance_recons
 
-    # Get result of a sample
-    def reconstruct(self, sample):
-        x = Variable(sample.to(self.device))
-        recon,  _, _ = self._forward(x, False)
-
-        return recon
 
 class AffordanceCapacityVAE(VAE):
 
@@ -153,8 +161,3 @@ class AffordanceCapacityVAE(VAE):
 
         return BCE + self.gamma * torch.abs(KLD - C), affordance_recons
 
-    # Get result of a sample
-    def reconstruct(self, sample):
-        x = Variable(sample.to(self.device))
-        recon,  _, _ = self._forward(x, False)
-        return recon

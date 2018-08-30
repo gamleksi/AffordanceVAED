@@ -6,11 +6,13 @@ import pathlib
 
 class AffordanceVisualizer(object):
 
-    def __init__(self, dataset, model, include_depth, save_folder, latent_dim):
+    def __init__(self, model, loader, logger, latent_dim):
 
-        self.dataloader = BlenderEvaluationLoader(include_depth, dataset=dataset)
+
         self.model = model
-        self.logger = MatplotLogger(save_folder, True)
+        self.dataloader = loader
+        self.logger = logger
+
         self.latent_dim = latent_dim
 
     def get_latent_dim(self):
@@ -138,7 +140,7 @@ class AffordanceVisualizer(object):
 
         zdim = self.get_latent_dim()
 
-        affordances, sub_titles = self._decode_latent_neighbors(torch.zeros(zdim), num_samples, step_size)
+        affordances, sub_titles = self._decode_latent_neighbors(torch.zeros(zdim).to(self.model.device), num_samples, step_size)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 
@@ -180,7 +182,7 @@ class AffordanceVisualizer(object):
 
         latent_idx = latent_dim - 1
         zdim = self.get_latent_dim()
-        affordances, sub_titles = self._decode_variable_neighbors(torch.zeros(zdim), num_samples, step_size, latent_idx)
+        affordances, sub_titles = self._decode_variable_neighbors(torch.zeros(zdim).to(self.model.device), num_samples, step_size, latent_idx)
 
         affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(affordances.shape[0])])
 

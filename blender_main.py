@@ -22,7 +22,7 @@ parser.add_argument('--capacity_change_duration', default=60000, type=int)
 
 parser.add_argument('--capacity', dest='capacity', action='store_true')
 parser.add_argument('--no-capacity', dest='capacity', action='store_false')
-parser.set_defaults(debug=False)
+parser.set_defaults(capacity=False)
 
 parser.add_argument('--folder_name', default='blender_vae', type=str)
 parser.add_argument('--visdom_title', default=None, type=str)
@@ -77,14 +77,7 @@ else:
     env = args.visdom_title
 
 include_depth = args.depth
-
-if debug:
-    log = False
-    file_name = None
-    folder_name = None
-else:
-    log = args.log
-
+log = args.log
 
 def main():
 
