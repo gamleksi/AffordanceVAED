@@ -238,8 +238,8 @@ import os
 
 class AffordanceDemonstrator(AffordanceVisualizer):
 
-    def __init__(self, model, folder, model_name, latent_dim, include_depth, logger=None, server='localhost',
-                 port=8097, loader=None):
+    def __init__(self, model, folder, model_name, latent_dim, include_depth, logger=None,
+                 loader=None):
 
         self.model = model
         self.model_name = model_name
@@ -250,7 +250,6 @@ class AffordanceDemonstrator(AffordanceVisualizer):
             self.dataloader = BlenderEvaluationLoader(include_depth)
         else:
             self.dataloader = loader
-        self.port = port
         if logger is None:
             self.logger = MatplotLogger(folder, False)
         else:

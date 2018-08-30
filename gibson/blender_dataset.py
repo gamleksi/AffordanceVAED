@@ -58,7 +58,6 @@ class BlenderFolder(data.Dataset):
 
             affordance_path = self.affordances[index]
             affordance = self.loader(affordance_path)
-
             target = self.affordance_transform(affordance)
         else:
             target = None
@@ -203,8 +202,6 @@ class BlenderEvaluationLoader(object):
 
     def get(self, idx):
         sample, affordance = self.dataset.__getitem__(idx)
-
-
         return torch.unsqueeze(sample, 0), torch.unsqueeze(affordance, 0)
 
     def get_samples(self, sample_list):
@@ -226,11 +223,7 @@ class BlenderEvaluationLoader(object):
 # Blender W: 320, H: 160
 # Kinect W: 640, H: 480
 
-class KinectFolder(BlenderFolder):
-
-    def __init__(self, root_path, include_depth):
-
-        super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False, include_randomness=False)
+class KinectImageHandler(object):
 
     def crop_top(self, image):
         width, height = image.size
@@ -267,6 +260,20 @@ class KinectFolder(BlenderFolder):
         transformed = transformed.float()
 
         return transformed
+
+
+class KinectFolder(BlenderFolder):
+
+    def __init__(self, root_path, include_depth):
+
+        super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False, include_randomness=False)
+        self.handler = KinectImageHandler()
+
+    def image_transform(self, image):
+        return self.handler.image_transform(image)
+
+    def depth_transform(self, image):
+        return self.handler.depth_transform(image)
 
     def generate_examples(self, num_examples=10, folder_name='examples'):
 

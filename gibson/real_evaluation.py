@@ -11,7 +11,6 @@ from image_logger import MatplotLogger
 from tools import model_name_search
 import os
 
-
 parser = argparse.ArgumentParser(description='Variational Autoencoder for blender data')
 parser.add_argument('--latent_size', default=10, type=int, help='Number of latent variables')
 parser.add_argument('--beta', default=4, type=int)
@@ -28,20 +27,21 @@ parser.set_defaults(debug=False)
 
 args = parser.parse_args()
 
-NUM_LATENT_VARIABLES = args.latent_size
-beta = args.beta
+def main(args):
 
-folder_name = args.folder_name
-assert(folder_name is not None)
+    NUM_LATENT_VARIABLES = args.latent_size
+    beta = args.beta
 
-file_name = args.file_name
-if file_name is None:
-    file_name = model_name_search(os.path.join('log', folder_name))
+    folder_name = args.folder_name
+    assert(folder_name is not None)
 
-debug = args.debug
-include_depth = args.depth
+    file_name = args.file_name
+    if file_name is None:
+        file_name = model_name_search(os.path.join('log', folder_name))
 
-def main():
+    debug = args.debug
+    include_depth = args.depth
+
     # Run options
     use_cuda = torch.cuda.is_available()
 
@@ -66,15 +66,8 @@ def main():
 
 if __name__ == '__main__':
     import numpy as np
-    evaluator = main()
-    samples = np.arange(0, 75)
 
+    evaluator = main(args)
+    samples = np.arange(0, 75)
     for s in samples:
         evaluator.get_result_pair([s], 'result {}'.format(s + 1))
-#    file_names = ['latent_distribution_sample_{}_step_size_{}'.format(sample, step_size) for sample in samples]
-#    evaluator.list_of_latent_distribution_samples(samples, file_names, step_size=step_size, num_samples=15)
-#    evaluator.dimensional_transform_of_samples(4, 5, 'dimensional_transform_of_samples_{}-{}_samples'.format(4, 5))
-#    evaluator.dimensional_transform_of_samples(10, 12, 'dimensional_transform_of_samples_{}-{}_samples'.format(10, 12))
-#    evaluator.get_result_pair([4,5,10, 12], 'result_pairs')
-#    evaluator.latent_distribution_of_zero('latent_distribution_of_zero',step_size=1, num_samples=15)
-#    evaluator.transform_of_samples(59, 60, 'transform_of_samples_{}-{}_samples'.format(59, 60))
