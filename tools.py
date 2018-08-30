@@ -42,7 +42,7 @@ def model_name_search(folder_path):
 
   for file in os.listdir(folder_path):
         if file.endswith(".tar"):
-          splitted = file.split('.', 1)
+          splitted = file.split('.pth', 1)
 
   return splitted[0]
 

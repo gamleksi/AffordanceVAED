@@ -2,7 +2,6 @@ from tools import affordance_to_array, affordance_layers_to_array
 import numpy as np
 import torch
 from torchnet.logger import VisdomLogger
-import pathlib
 
 class AffordanceVisualizer(object):
 
@@ -235,6 +234,7 @@ class AffordanceVisualizer(object):
 
 from blender_dataset import BlenderEvaluationLoader
 from image_logger import MatplotLogger
+import os
 
 class AffordanceDemonstrator(AffordanceVisualizer):
 
@@ -257,6 +257,6 @@ class AffordanceDemonstrator(AffordanceVisualizer):
             self.logger = logger
 
     def load_parameters(self, folder, model_name):
-        Path = pathlib.Path('./log/{}'.format(folder)).joinpath('{}.pth.tar'.format(model_name))
-        self.model.load_state_dict(torch.load(Path))
+        path = os.path.join('log/{}'.format(folder), '{}.pth.tar'.format(model_name))
+        self.model.load_state_dict(torch.load(path))
         self.model.eval()

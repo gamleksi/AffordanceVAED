@@ -61,7 +61,7 @@ def main():
 
     kinect_loader = KinectEvaluationLoader(include_depth)
 
-    return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth, loader=kinect_loader, logger=MatplotLogger(folder_name, False, save_folder='real_image_results'))
+    return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth, loader=kinect_loader, logger=MatplotLogger(folder_name, False, save_folder='real_images_test'))
 
 if __name__ == '__main__':
     import numpy as np
