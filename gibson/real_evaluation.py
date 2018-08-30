@@ -69,7 +69,6 @@ if __name__ == '__main__':
     evaluator = main()
     samples = np.arange(0, 75)
 
-    evaluator.get_result_pair(samples, 'result')
     for s in samples:
         evaluator.get_result_pair([s], 'result {}'.format(s + 1))
 #    file_names = ['latent_distribution_sample_{}_step_size_{}'.format(sample, step_size) for sample in samples]

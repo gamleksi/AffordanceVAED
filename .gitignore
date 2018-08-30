@@ -97,12 +97,15 @@ ENV/
 .DS_Store
 
 # log
-log/*
+gibson/log/*
+gibson/libs/*
 
 # MNIST
 raw/*
 data/*
-
 processed/
-
 .idea/
+
+# VIM
+.*.swp
+
