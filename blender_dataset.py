@@ -223,6 +223,8 @@ class BlenderEvaluationLoader(object):
 
         return samples, affordances
 
+# Blender W: 320, H: 160
+# Kinect W: 640, H: 480
 
 class KinectFolder(BlenderFolder):
 
@@ -230,12 +232,22 @@ class KinectFolder(BlenderFolder):
 
         super(KinectFolder, self).__init__(root_path, include_depth, include_affordance=False, include_randomness=False)
 
+    def crop_top(self, image):
+        width, height = image.size
+        left = 0
+        top = height - 160 * 2
+        right = width
+        bottom = height
+        return image.crop((left, top, right, bottom))
+
     def image_transform(self, image):
 
         if image.mode == 'RGBA':
             image = image.convert('RGB')
 
-        transform_content = transforms.Compose([transforms.CenterCrop((160, 320)),
+        image = self.crop_top(image)
+
+        transform_content = transforms.Compose([transforms.Resize((160, 320)),
                                              transforms.ToTensor()
                                              ])
 
@@ -245,8 +257,9 @@ class KinectFolder(BlenderFolder):
     def depth_transform(self, image):
 
         image = image.getchannel(0)
+        image = self.crop_top(image)
 
-        transform_content = transforms.Compose([transforms.CenterCrop((160, 320)),
+        transform_content = transforms.Compose([transforms.Resize((160, 320)),
                                              transforms.ToTensor()
                                              ])
 

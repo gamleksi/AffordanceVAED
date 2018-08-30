@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description='Variational Autoencoder for blende
 parser.add_argument('--latent_size', default=10, type=int, help='Number of latent variables')
 parser.add_argument('--beta', default=4, type=int)
 parser.add_argument('--folder_name', default='blender_vae_beta_4_v_1', type=str)
+parser.add_argument('--sample_folder', default='kinect_results', type=str)
 parser.add_argument('--file_name', type=str)
 parser.add_argument('--depth', dest='depth', action='store_true')
 parser.add_argument('--no-depth', dest='depth', action='store_false')
@@ -61,7 +62,7 @@ def main():
 
     kinect_loader = KinectEvaluationLoader(include_depth)
 
-    return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth, loader=kinect_loader, logger=MatplotLogger(folder_name, False, save_folder='real_images_test'))
+    return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth, loader=kinect_loader, logger=MatplotLogger(folder_name, False, save_folder=args.sample_folder))
 
 if __name__ == '__main__':
     import numpy as np
