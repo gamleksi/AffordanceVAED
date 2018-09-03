@@ -176,6 +176,21 @@ class AffordanceVisualizer(object):
 
         self.logger.plot_image_list(samples, num_samples, file_name, file_name)
 
+    def get_result(self, list_idx, file_name):
+
+        num_samples = len(list_idx)
+        samples, affordances = self.dataloader.get_samples(list_idx)
+        recons = self._get_results(samples)
+
+        images = samples[:, :3].cpu().detach().numpy() * 255
+
+        reconstructions = np.array([affordance_to_array(recons[idx]) for idx in range(num_samples)])
+
+        samples = np.concatenate([images, reconstructions])
+        #samples = samples.reshape((len(affordance_layers) + 2) * num_samples, images.shape[1], images.shape[2], images.shape[3])
+
+        self.logger.plot_image_list(samples, num_samples, file_name, file_name)
+
     def dimensional_neighbors_of_zero_area(self, latent_dim, file_name, step_size=5, num_samples = 100):
         assert(latent_dim > 0)
 
@@ -240,7 +255,6 @@ class AffordanceDemonstrator(AffordanceVisualizer):
 
     def __init__(self, model, folder, model_name, latent_dim, include_depth, logger=None,
                  loader=None):
-
         self.model = model
         self.model_name = model_name
         self.latent_dim = latent_dim

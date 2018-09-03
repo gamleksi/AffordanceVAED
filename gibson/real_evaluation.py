@@ -65,9 +65,11 @@ def main(args):
     return AffordanceDemonstrator(model, folder_name, file_name, NUM_LATENT_VARIABLES, include_depth, loader=kinect_loader, logger=MatplotLogger(folder_name, False, save_folder=args.sample_folder))
 
 if __name__ == '__main__':
-    import numpy as np
+    import glob
 
     evaluator = main(args)
-    samples = np.arange(0, 75)
-    for s in samples:
-        evaluator.get_result_pair([s], 'result {}'.format(s + 1))
+    list_of_images = glob.glob('/home/aleksi/hacks/vae_ws/real_images/images/' + '*.png')
+    for s in range(len(list_of_images)):
+        #evaluator.get_result([s], '{}_reconstruction'.format(s + 1))
+        #evaluator.get_result([s], '{}_reconstruction'.format(s + 1))
+        evaluator.get_result_pair([s], '{}_reconstruction'.format(s + 1))
