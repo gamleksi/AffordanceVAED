@@ -8,9 +8,6 @@ from torchvision import transforms
 import torch.utils.data as data
 from tools import save_affordance_pair
 
-
-
-
 class BlenderFolder(data.Dataset):
 
     def __init__(self, root_path, include_depth, include_affordance=True, debug=False, include_randomness=True):
@@ -162,25 +159,6 @@ class BlenderLoader(object):
         trainset, testset = torch.utils.data.random_split(dataset, (train_size, test_size))
         self.trainset = trainset
         self.testset = testset
-
-#        self._intialize_visdom_samples(num_visdon_samples)
-#
-#    def _intialize_visdom_samples(self, num_samples):
-#
-#        sample, affordance = self.testset.__getitem__(0)
-#        samples = torch.empty(num_samples, sample.shape[0], sample.shape[1], sample.shape[2])
-#        affordances = torch.empty(num_samples, affordance.shape[0], affordance.shape[1], affordance.shape[2])
-#
-#        samples[0] = sample
-#        affordances[0] = affordance
-#
-#        for i in range(1, num_samples):
-#            sample, affordance = self.testset.__getitem__(i)
-#            samples[i] = sample
-#            affordances[i] = affordance
-#
-#        self.visdom_data = (samples, affordances)
-#
 
     def get_iterator(self, train):
 

@@ -89,7 +89,8 @@ class VAE(nn.Module):
         return BCE + self.beta * KLD, x_recon
 
     def latent_distribution(self, sample):
-        self.set_mode(False)
+
+        #  self.set_mode(False)
         x = Variable(sample.to(self.device))
         mu, logvar = self.encoder(x)
 
