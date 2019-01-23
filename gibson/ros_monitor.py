@@ -48,7 +48,7 @@ class RosPerceptionVAE(object):
         self.model.eval()
 
     def process_image(self, image):
-        sample = transforms.Compose([transforms.Resize((160, 320)), transforms.ToTensor()])(image)
+        sample = transforms.Compose([transforms.CenterCrop((160, 320)), transforms.ToTensor()])(image)
         return torch.unsqueeze(sample, 0)
 
     def get_latent(self, sample):
