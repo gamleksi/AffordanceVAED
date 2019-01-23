@@ -13,7 +13,7 @@ parser.add_argument('--beta', default=4, type=int)
 parser.add_argument('--folder_name', type=str)
 parser.add_argument('--file_name', type=str)
 
-parser.add_argument('--log_path', default='log' type=str)
+parser.add_argument('--log_path', default='log', type=str)
 
 parser.add_argument('--depth', dest='depth', action='store_true')
 parser.add_argument('--no-depth', dest='depth', action='store_false')
