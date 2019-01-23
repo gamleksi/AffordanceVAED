@@ -6,8 +6,6 @@ from models.simple_model import AffordanceVAE
 
 from torchvision import transforms
 
-ABSOLUTE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 #    def get_result_pair(self, sample, title):
 #
 #        sample = self._process_samples(sample)
@@ -25,25 +23,24 @@ ABSOLUTE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class RosPerceptionVAE(object):
 
-    def __init__(self, model_folder, latent_dim, root_path=ABSOLUTE_DIR):
+    def __init__(self, model_dir, latent_dim):
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         if device.type == 'cuda':
-            print('GPU works for behavioral!')
+            print('GPU works for Perception!')
         else:
-            print('Behavioural is not using GPU')
+            print('Perception is not using GPU')
 
         encoder = Encoder(latent_dim, 3)
         decoder = Decoder(latent_dim, 2)
         self.model = AffordanceVAE(encoder, decoder, device).to(device)
-        self.load_parameters(model_folder, root_path)
+        self.load_parameters(model_dir)
 
-    def load_parameters(self, folder, root_path):
+    def load_parameters(self, model_dir):
 
-        model_path = os.path.join(root_path, 'log', folder)
-        model_name = model_name_search(model_path)
-        path = os.path.join(model_path, '{}.pth.tar'.format(model_name))
+        model_name = model_name_search(model_dir)
+        path = os.path.join(model_dir, '{}.pth.tar'.format(model_name))
         self.model.load_state_dict(torch.load(path))
         self.model.eval()
 
@@ -72,4 +69,4 @@ class RosPerceptionVAE(object):
 #    evaluator.get_result_pair(sample, 'test')
 
 if __name__  == '__main__':
-    RosPerceptionVAE('rgb_test', 10, root_path=ABSOLUTE_DIR)
+    RosPerceptionVAE('log/rgb_test', 10)
