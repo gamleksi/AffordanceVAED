@@ -1,2 +1,0 @@
-python setup.py sdist --format=tar
-pip2.7 install dist/gibson-0.0.2.tar --user
