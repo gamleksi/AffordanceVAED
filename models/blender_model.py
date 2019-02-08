@@ -68,20 +68,20 @@ class Encoder(nn.Module):
 
         return z_loc, z_scale
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    from blender_dataset import BlenderFolder
-    dataset = BlenderFolder('/opt/data/table_dataset/dataset', debug=True)
-    sample1, target = dataset.__getitem__(0)
-    sample2, target = dataset.__getitem__(1)
+#    from blender_dataset import BlenderFolder
+#    dataset = BlenderFolder('/opt/data/table_dataset/dataset', debug=True)
+#    sample1, target = dataset.__getitem__(0)
+#    sample2, target = dataset.__getitem__(1)
+#
+#    import torch
+#    sample = torch.cat([sample1.unsqueeze(0), sample2.unsqueeze(0)], 0)
+#
+#    encoder = Encoder(10, 4)
+#    decoder = Decoder(10, 2)
 
-    import torch
-    sample = torch.cat([sample1.unsqueeze(0), sample2.unsqueeze(0)], 0)
-
-    encoder = Encoder(10, 4)
-    decoder = Decoder(10, 2)
-
-    z, _ = encoder.forward(sample)
-    sample = decoder.forward(z)
+#    z, _ = encoder.forward(sample)
+#    sample = decoder.forward(z)
 
 

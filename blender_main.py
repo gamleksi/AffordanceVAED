@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.optim as optim
 from blender_dataset import BlenderLoader
@@ -11,104 +12,83 @@ import argparse
 parser = argparse.ArgumentParser(description='Variational Autoencoder for blender data')
 parser.add_argument('--lr', default=1.0e-3, type=float, help='Learning rate')
 parser.add_argument('--latent_size', default=10, type=int, help='Number of latent variables')
-parser.add_argument('--num_epoch', default=10000, type=int, help='Number of epochs')
-parser.add_argument('--batch_size', default=256, type=int)
-parser.add_argument('--num_workers', default=18, type=int)
+parser.add_argument('--num-epoch', default=10000, type=int, help='Number of epochs')
+parser.add_argument('--batch-size', default=256, type=int)
+parser.add_argument('--num-workers', default=18, type=int)
 parser.add_argument('--beta', default=4, type=int)
 
-parser.add_argument('--gamma', default=300, type=int)
-parser.add_argument('--capacity_limit', default=30, type=int)
-parser.add_argument('--capacity_change_duration', default=60000, type=int)
+# parser.add_argument('--gamma', default=300, type=int)
+# parser.add_argument('--capacity-limit', default=30, type=int)
+# parser.add_argument('--capacity-change_duration', default=60000, type=int)
 
 parser.add_argument('--capacity', dest='capacity', action='store_true')
 parser.add_argument('--no-capacity', dest='capacity', action='store_false')
 parser.set_defaults(capacity=False)
 
-parser.add_argument('--folder_name', default='blender_vae', type=str)
-parser.add_argument('--visdom_title', default=None, type=str)
-parser.add_argument('--env', default=None, type=str)
+parser.add_argument('--folder-name', default='blender_vae', type=str)
 
 parser.add_argument('--debug', dest='debug', action='store_true')
-parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
 
-parser.add_argument('--visdom', dest='visdom', action='store_true')
-parser.add_argument('--no-visdom', dest='visdom', action='store_false')
-parser.set_defaults(visdom=True)
-
-parser.add_argument('--log', dest='log', action='store_true')
 parser.add_argument('--no-log', dest='log', action='store_false')
 parser.set_defaults(log=True)
 
 parser.add_argument('--depth', dest='depth', action='store_true')
-parser.add_argument('--no-depth', dest='depth', action='store_false')
-parser.set_defaults(depth=True)
+parser.set_defaults(depth=False)
 
-args = parser.parse_args()
+def save_args(args, save_path):
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    print("TODO")
 
-LEARNING_RATE = args.lr
-NUM_LATENT_VARIABLES = args.latent_size
-folder_name = args.folder_name
-beta = args.beta
 
-use_capacity = args.capacity
-gamma = args.gamma
-capacity_limit = args.capacity_limit
-capacity_change_duration = args.capacity_change_duration
+NUM_AFFORDANCES = 2
+# DATA_PATHS = ['/opt/data/table_dataset/two_cups_dataset', '/opt/data/table_dataset/two_cups_dataset']
+DATA_PATHS = ['debug_ds/debug_samples']
 
-if use_capacity:
-    file_name = 'model_g_{}_lim_{}_dur_{}_l_{}_lr_{}'.format(gamma, capacity_limit, capacity_change_duration, NUM_LATENT_VARIABLES, LEARNING_RATE)
-else:
-    file_name = 'model_b_{}_l_{}_lr_{}'.format(beta, NUM_LATENT_VARIABLES, LEARNING_RATE)
-NUM_EPOCHS = args.num_epoch
-BATCH_SIZE = args.batch_size
-NUM_PROCESSES = args.num_workers
-debug = args.debug
-visdom = args.visdom
+LOG_PATH = 'perception_results'
 
-if args.visdom_title is None:
-    visdom_title = file_name + 'logger'
-else:
-    visdom_title = args.visdom_title
 
-if args.env is None:
-    env = file_name
-else:
-    env = args.visdom_title
+def save_arguments(args, save_path):
 
-include_depth = args.depth
-log = args.log
+    args = vars(args)
+    if not(os.path.exists(save_path)):
+        os.makedirs(save_path)
+    file = open(os.path.join(save_path, "arguments.txt"), 'w')
+    lines = [item[0] + " " + str(item[1]) + "\n" for item in args.items()]
+    file.writelines(lines)
 
-def main():
+def main(args):
 
-    AFFORDANCE_SIZE = 2
+    save_path = os.path.join(LOG_PATH, args.folder_name)
+
+    save_arguments(args, save_path)
 
     use_cuda = torch.cuda.is_available()
 
     if use_cuda:
         print('GPU works!')
     else:
-        for i in range(10):
-            print('YOU ARE NOT USING GPU')
+        print('YOU ARE NOT USING GPU')
 
     device = torch.device('cuda' if use_cuda else 'cpu')
 
-    image_channels = 4 if include_depth else 3
+    image_channels = 4 if args.depth else 3
 
-    encoder = Encoder(NUM_LATENT_VARIABLES, image_channels)
-    decoder = Decoder(NUM_LATENT_VARIABLES, AFFORDANCE_SIZE)
+    encoder = Encoder(args.latent_size, image_channels)
+    decoder = Decoder(args.latent_size, NUM_AFFORDANCES)
 
-    if use_capacity:
+    if args.capacity:
         model = AffordanceCapacityVAE(encoder, decoder, device).to(device)
     else:
-        model = AffordanceVAE(encoder, decoder, device, beta=beta).to(device)
+        model = AffordanceVAE(encoder, decoder, device, beta=args.beta).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    dataloader = BlenderLoader(BATCH_SIZE, NUM_PROCESSES, include_depth, debug=args.debug)
-
-    trainer = Trainer(dataloader, model, NUM_LATENT_VARIABLES, save_folder=folder_name, save_name=file_name, log=log, visdom=visdom, visdom_title=visdom_title)
-    trainer.train(NUM_EPOCHS, optimizer)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    dataloader = BlenderLoader(args.batch_size, args.num_workers, args.depth, DATA_PATHS, debug=args.debug)
+    trainer = Trainer(dataloader, model, log_path=save_path)
+    trainer.train(args.num_epoch, optimizer)
 
 
 if __name__ == '__main__':
-    main()
+    args = parser.parse_args()
+    main(args)

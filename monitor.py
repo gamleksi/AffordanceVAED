@@ -1,42 +1,160 @@
-import numpy as np
-import torch
-
-import torchnet as tnt
-from torchnet.engine import Engine
-from torchnet.logger import MeterLogger
-from affordance_monitor import AffordanceVisualizer
-from blender_dataset import KinectEvaluationLoader, BlenderEvaluationLoader
-from image_logger import MatplotLogger
-from tqdm import tqdm
 import csv
 import os
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
+import numpy as np
+import torch
+import torchnet as tnt
+from torchnet.engine import Engine
+from tools import affordance_to_array, affordance_layers_to_array
+
+
+class Saver(object):
+
+    def __init__(self, save_path):
+        self.save_path = save_path
+
+        self.train_losses = []
+        self.val_losses = []
+
+        self.bce_losses = []
+        self.bce_vals = []
+
+        self.kld_losses = []
+        self.kld_vals = []
+
+    def log_csv(self, train_loss, val_loss, bce_loss, bce_val, kld_train, kld_val, improved):
+
+        fieldnames = ['train_loss', 'val_loss', 'bce_loss', 'bce_val', 'kld_train', 'kld_val', 'improved']
+        fields = [train_loss, val_loss, bce_loss, bce_val, kld_train, kld_val, int(improved)]
+        csv_path = os.path.join(self.save_path, 'log.csv')
+        file_exists = os.path.isfile(csv_path)
+
+        with open(csv_path, 'a') as f:
+            writer = csv.DictWriter(f, delimiter=',', fieldnames=fieldnames)
+            if not(file_exists):
+                writer.writeheader()
+            row = {}
+            for i, name in enumerate(fieldnames):
+                row[name] = fields[i]
+
+            writer.writerow(row)
+
+    def save_model(self, model, epoch):
+
+        model_path = os.path.join(self.save_path, 'model_epoch_{}.pth.tar'.format(epoch))
+        torch.save(model.state_dict(), model_path)
+
+    def update_losses(self, train_loss, val_loss):
+        self.train_losses.append(np.log(train_loss))
+        self.val_losses.append(np.log(val_loss))
+        steps = range(1, len(self.train_losses) + 1)
+        plt.figure()
+        plt.plot(steps, self.train_losses, 'r', label='Train')
+        plt.plot(steps, self.val_losses, 'b', label='Validation')
+        plt.title('Average Loss (in log scale)')
+        plt.legend()
+        plt.savefig(os.path.join(self.save_path, 'log_loss.png'))
+        plt.close()
+
+    def update_bces(self, bce_train, bce_val):
+
+        self.bce_losses.append(np.log(bce_train))
+        self.bce_vals.append(np.log(bce_val))
+
+        steps = range(1, len(self.bce_losses) + 1)
+        plt.figure()
+        plt.plot(steps, self.bce_losses, 'r', label='Train')
+        plt.plot(steps, self.bce_vals, 'b', label='Validation')
+
+        plt.title('KLD (in log scale)')
+        plt.legend()
+        plt.savefig(os.path.join(self.save_path, 'log_klds.png'))
+        plt.close()
+
+
+    def update_klds(self, kld_train, kld_val):
+
+        self.kld_losses.append(np.log(kld_train))
+        self.kld_vals.append(np.log(kld_val))
+
+        steps = range(1, len(self.kld_losses) + 1)
+        plt.figure()
+        plt.plot(steps, self.kld_losses, 'r', label='Train')
+        plt.plot(steps, self.kld_vals, 'b', label='Validation')
+
+        plt.title('KLD (in log scale)')
+        plt.legend()
+        plt.savefig(os.path.join(self.save_path, 'log_klds.png'))
+        plt.close()
+
+    def get_result_pair(self, samples, affordances, recons, epoch):
+
+        num_samples = samples.shape[0]
+
+        images = samples[:, :3].cpu().detach().numpy()
+        reconstructions = np.array([affordance_to_array(recons[idx]) for idx in range(num_samples)])
+
+        affordance_layers = np.array([affordance_layers_to_array(recons[idx]) for idx in range(num_samples)])
+        affordance_layers = np.transpose(affordance_layers, (1, 0, 2, 3, 4))
+        affordance_layers = [layer for layer in affordance_layers]
+
+        if affordances is not None:
+            affordances = np.array([affordance_to_array(affordances[idx]) for idx in range(num_samples)])
+            samples = np.column_stack([images, affordances, reconstructions] + affordance_layers)
+            num_cols = len(affordance_layers) + 3
+            samples = samples.reshape(num_cols * num_samples, images.shape[1], images.shape[2], images.shape[3])
+        else:
+            samples = np.column_stack([images, reconstructions] + affordance_layers)
+            num_cols = len(affordance_layers) + 3
+            samples = samples.reshape(num_cols * num_samples, images.shape[1], images.shape[2], images.shape[3])
+
+        sample_path = os.path.join(self.save_path, '{}_epoch'.format(epoch))
+        if not os.path.exists(sample_path):
+            os.makedirs(sample_path)
+
+        num_rows = 6
+        num_images = int(num_samples / num_rows)
+        iter = 0
+
+        for b in range(num_images):
+
+            fig, axeslist = plt.subplots(ncols=num_cols, nrows=num_rows)
+
+            for i in range(num_rows):
+
+                for j in range(num_cols):
+                    img = samples[b * num_rows * num_cols + i * num_cols + j].transpose(1, 2, 0)
+                    axeslist[i][j].imshow(img)
+                    axeslist[i][j].set_axis_off()
+
+            plt.savefig(os.path.join(sample_path, 'sample_{}.png'.format(iter)))
+            plt.tight_layout()
+            plt.close(fig)
+            iter += 1
 
 
 class Trainer(Engine):
 
-    def __init__(self, dataloader, model, latent_dim, save_folder=None, save_name=None, log=False, visdom=True, server='localhost', port=8097, visdom_title="mnist_meterlogger"):
+    def __init__(self, dataloader, model, log_path=None):
         super(Trainer, self).__init__()
 
         # TODO latent_dim
         self.get_iterator = dataloader.get_iterator
-        include_depth = dataloader.include_depth
-        self.visualizer = AffordanceVisualizer(model, BlenderEvaluationLoader(include_depth, dataset=dataloader.testset), MatplotLogger(save_folder, True), latent_dim)
-        self.kinect_visualizer = AffordanceVisualizer(model, KinectEvaluationLoader(include_depth), MatplotLogger(save_folder, False, save_folder='real_image_results'), latent_dim)
         self.meter_loss = tnt.meter.AverageValueMeter()
+        self.meter_loss = tnt.meter.AverageValueMeter()
+        self.kld = tnt.meter.AverageValueMeter()
+        self.bce = tnt.meter.AverageValueMeter()
+
         self.initialize_engine()
 
         self.model = model
+        self.log_path = log_path
 
-        self.log_data = log
-
-        if self.log_data:
-            assert(save_folder is not None and save_name is not None)
-            self.initilize_log(save_folder, save_name)
+        if self.log_path is not None:
+            self.saver = Saver(log_path)
             self.best_loss = np.inf
-        else:
-            assert(save_folder is None and save_name is None)
-        self.visdom = visdom
-        self.mlog = MeterLogger(server=server, port=port, title=visdom_title)
+
         self.epoch_iter = 0
         self.sample_images_step = 1
 
@@ -58,89 +176,58 @@ class Trainer(Engine):
     def on_forward(self, state):
         loss = state['loss']
         self.meter_loss.add(loss.item())
-        if self.visdom:
-            self.mlog.update_loss(loss, meter='loss')
+        BCE, KLD, input_samples, affordances, reconstruction_samples = state['output']
+        self.meter_loss.add(loss.item())
+        self.bce.add(BCE.item())
+        self.kld.add(KLD.item())
+        self.input_samples = input_samples
+        self.affordances_samples = affordances
+        self.reconstruction_samples = reconstruction_samples
 
     def on_start_epoch(self, state):
-
         self.model.train(True)
         self.reset_meters()
-        if self.visdom:
-            self.mlog.timer.reset()
 
-        state['iterator'] = tqdm(state['iterator'])
+    def reset_meters(self):
+        self.meter_loss.reset()
+        self.kld.reset()
+        self.bce.reset()
 
     def on_end_epoch(self, state):
 
+        print('EPOCH', self.epoch_iter)
+
         train_loss = self.meter_loss.value()[0]
+        bce_train = self.bce.value()[0]
+        kld_train = self.kld.value()[0]
+
         self.reset_meters()
-        if self.visdom:
+        self.test(self.model.evaluate, self.get_iterator(False))
 
-            self.mlog.print_meter(mode="Train", iepoch=state['epoch'])
-            self.mlog.reset_meter(mode="Train", iepoch=state['epoch'])
+        val_loss = self.meter_loss.value()[0]  # type: float
+        bce_val = self.bce.value()[0] # type: float
+        kld_val = self.kld.value()[0] # type: float
 
-            self.test(self.model.evaluate, self.get_iterator(False))
-            val_loss = self.meter_loss.value()[0]
+        print("Loss train: {}, val: {}".format(train_loss, val_loss))
+        print("BCE: train: {}, val: {}".format(bce_train, bce_val))
+        print("KLD: train: {}, val: {}".format(kld_train, kld_val))
 
-            if self.log_data:
+        if self.log_path is not None:
 
-                self.log_csv(train_loss, val_loss, val_loss < self.best_loss)
+            self.saver.log_csv(train_loss, val_loss, bce_train, bce_val, kld_train, kld_val, val_loss < self.best_loss)
 
-                if val_loss < self.best_loss:
-                    self.save_model()
-                    self.best_loss = val_loss
+            self.saver.update_losses(train_loss, val_loss)
+            self.saver.update_bces(bce_train, bce_val)
+            self.saver.update_klds(kld_train, kld_val)
 
-        if self.visdom:
+            if val_loss < self.best_loss:
 
-            self.mlog.print_meter(mode="Test", iepoch=state['epoch'])
-            self.mlog.reset_meter(mode="Test", iepoch=state['epoch'])
+                self.saver.save_model(self.model, self.epoch_iter)
+                self.best_loss = val_loss
 
-            if self.epoch_iter % self.sample_images_step == 0:
+            self.saver.get_result_pair(self.input_samples[:18], self.affordances_samples[:18], self.reconstruction_samples[:18], self.epoch_iter)
 
-                ids = [id for id in range(1, 3)]
-                files = ['sample_{}_dist_epoch_{}'.format(id, self.epoch_iter) for id in ids]
-                self.visualizer.list_of_latent_distribution_samples(ids, files, step_size=3)
-                file = 'samples_1-8_pairs_epoch_{}'.format(self.epoch_iter)
-                self.visualizer.get_result_pair(ids, file)
-                file = 'zero_area_epoch_{}'.format(self.epoch_iter)
-                self.visualizer.latent_distribution_of_zero(file, step_size=3)
-                file = 'sample_transform_{}'.format(self.epoch_iter)
-                self.visualizer.transform_of_samples(4, 5, file)
-
-                for s in range(int(30/5)): # HARD CODED TODO
-                    idx = s * 5
-                    self.kinect_visualizer.get_result_pair(np.arange(idx, idx + 5), 'samples_{}-{}_epoch_{}'.format(idx + 1, idx + 6, self.epoch_iter))
-
-            self.epoch_iter += 1
-
-    def initilize_log(self, save_folder, save_name):
-
-        self.log_path = 'log/{}'.format(save_folder)
-
-        assert(not(os.path.exists(self.log_path))) # remove a current folder with the same name or rename the suggested folder
-        os.makedirs(self.log_path)
-        self.csv_path = os.path.join(self.log_path, 'log_{}.csv'.format(save_name))
-        self.model_path = os.path.join(self.log_path, '{}.pth.tar'.format(save_name))
-
-    def save_model(self):
-        torch.save(self.model.state_dict(), self.model_path)
-
-    def log_csv(self, train_loss, val_loss, improved):
-
-        fieldnames = ['train_loss', 'val_loss', 'improved']
-        fields = [train_loss, val_loss, int(improved)]
-
-        file_exists = os.path.isfile(self.csv_path)
-
-        with open(self.csv_path, 'a') as f:
-            writer = csv.DictWriter(f, delimiter=',', fieldnames=fieldnames)
-            if not(file_exists):
-                writer.writeheader()
-            row = {}
-            for i, name in enumerate(fieldnames):
-                row[name] = fields[i]
-
-            writer.writerow(row)
+        self.epoch_iter += 1
 
 
 class Demonstrator(Trainer):
@@ -165,8 +252,8 @@ class Demonstrator(Trainer):
 
         print('Testing loss: %.4f' % (val_loss))
 
-        self.generate_visdom_samples(self.visdom_samples)
-        self.generate_latent_samples(self.visdom_samples[0])
+#        self.generate_visdom_samples(self.visdom_samples)
+#        self.generate_latent_samples(self.visdom_samples[0])
 
 
 

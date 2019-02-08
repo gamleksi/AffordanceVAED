@@ -68,8 +68,8 @@ class VAE(nn.Module):
 
     def _reparameterize(self, mu, logvar, train):
         if train:
-            std = torch.exp(0.5*logvar, device=self.device)
-            eps = torch.randn_like(std, device=self.device)
+            std = torch.exp(0.5*logvar)
+            eps = torch.randn_like(std)
             return eps.mul(std).add_(mu)
         else:
             return mu
@@ -83,9 +83,9 @@ class VAE(nn.Module):
         x_recon,  mu, log_var = self._forward(x, train)
 
         BCE = F.binary_cross_entropy(x_recon, x, size_average=False)
-
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+
         return BCE + self.beta * KLD, x_recon
 
     def latent_distribution(self, sample):
@@ -111,12 +111,10 @@ class AffordanceVAE(VAE):
     def evaluate(self, state):
 
         x = Variable(state[0][0].to(self.device))
-        affordances = Variable(state[0][1].to(self.device))
+        affordances = state[0][1].to(self.device)
         train = state[1]
 
-
         # chooses whether it is in training mode or eval mode.
-
         affordance_recons,  mu, log_var = self._forward(x, train)
 
         BCE = F.binary_cross_entropy(affordance_recons, affordances, size_average=False)
@@ -124,7 +122,7 @@ class AffordanceVAE(VAE):
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
 
-        return BCE + self.beta * KLD, affordance_recons
+        return BCE + self.beta * KLD, (BCE, KLD, x, affordances, affordance_recons)
 
 
 class AffordanceCapacityVAE(VAE):
