@@ -43,8 +43,8 @@ def save_args(args, save_path):
 
 
 NUM_AFFORDANCES = 2
-# DATA_PATHS = ['/opt/data/table_dataset/two_cups_dataset', '/opt/data/table_dataset/two_cups_dataset']
-DATA_PATHS = ['debug_ds/debug_samples']
+DATA_PATHS = ['/opt/data/table_dataset/two_cups_dataset', '/opt/data/table_dataset/two_cups_dataset']
+# DATA_PATHS = ['debug_ds/debug_samples']
 
 LOG_PATH = 'perception_results'
 
