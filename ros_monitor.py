@@ -43,7 +43,9 @@ class RosPerceptionVAE(object):
 
         model_name = model_name_search(model_dir)
         path = os.path.join(model_dir, '{}.pth.tar'.format(model_name))
-        self.model.load_state_dict(torch.load(path))
+
+        model_state = torch.load(path, map_location='cuda:0')
+        self.model.load_state_dict(model_state)
         self.model.eval()
 
     def process_image(self, image):
