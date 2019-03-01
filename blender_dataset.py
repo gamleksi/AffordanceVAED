@@ -159,7 +159,7 @@ class BlenderFolder(data.Dataset):
 
 class BlenderLoader(object):
 
-    def __init__(self, batch_size, num_processes, include_depth, data_paths, debug=False, num_visdon_samples=20):
+    def __init__(self, batch_size, num_processes, include_depth, data_paths, debug=False):
 
         self.batch_size = batch_size
         self.num_processes = num_processes

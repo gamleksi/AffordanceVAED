@@ -36,7 +36,6 @@ AFFORDANCE_RGB = {
 DEPTH_MAX = 3626
 
 
-import glob
 
 def model_name_search(folder_path):
 
@@ -359,23 +358,25 @@ def build_affordance_dataset(folder_path, save_path, train_test_ratio=0.7, num_s
     dataset_names = [train_file, test_file]
 
     # img_frame_size = orignal_image_size(image_paths[0])
-    crop_frame = (320, 320)
+    crop_frame = (240, 320)
     img_dim = (3, crop_frame[0], crop_frame[1])
     affordance_dim = (7, crop_frame[0], crop_frame[1])
 
+
     path_names = [train_file, test_file]
+
 
     for idx, indices in enumerate([train_indices, test_indices]):
         images = multiloader(image_paths[indices], image_process, img_dim, resize=resize)
+        affordances = multiloader(affordance_paths[indices], mat_process, affordance_dim, resize=None)
         depth_images = multiloader(depth_paths[indices], depth_image_process, (1, crop_frame[0], crop_frame[1]), resize=resize)
         input = torch.cat([images, depth_images], dim=1)
-
-        affordances = multiloader(affordance_paths[indices], mat_process, affordance_dim, resize=resize)
         torch.save((input, affordances, classes[indices]), os.path.join(save_path, path_names[idx]))
 
+    import pdb; pdb.set_trace()
     for idx in range(50):
         save_affordance_pair(images[idx], affordances[idx], depth_images[idx],
-                             save_file='/home/aleksi/hacks/thesis/code/gibson/data/affordances/examples/pair_example_{}.jpg'.format(idx))
+                             save_file='umd_dataset/pair_example_{}.jpg'.format(idx))
 
 
 def global_pixel_max(folder_path):
@@ -407,5 +408,5 @@ def rgb_tensors_grayscale(tensors):
 
 if __name__ == '__main__':
 
-    build_affordance_dataset('/home/aleksi/hacks/thesis/code/gibson/data/affordances/part-affordance-dataset/tools',
-                            '/home/aleksi/hacks/thesis/code/gibson/data/affordances/full_64', num_samples=None, resize=(64, 64))
+    build_affordance_dataset('part-affordance-dataset/tools',
+                            'umd_dataset', num_samples=None, resize=(240, 320))
