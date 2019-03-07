@@ -110,3 +110,9 @@ processed/
 # VIM
 .*.swp
 
+# Dataset folders
+perception_results/*
+umd_dataset/*
+umd_results/*
+part-affordance-dataset/*
+debug_ds/*
