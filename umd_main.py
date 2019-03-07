@@ -1,52 +1,63 @@
+import os
+import argparse
 import torch
 import torch.optim as optim
-from loaders import ImageLoader
 
-from models.chair_model import Decoder, Encoder
-from models.simple_model import VAE
+from affordance_vaed import AffordanceVAED, Encoder, Decoder
+from umd_loader import UMDLoader
+from affordance_trainer import Trainer
+from tools import save_arguments
 
-from monitor import Trainer, Demonstrator
+
+parser = argparse.ArgumentParser(description='VAED for UMD dataset')
+
+parser.add_argument('--lr', default=1.0e-3, type=float, help='Learning rate')
+parser.add_argument('--latent-size', default=20, type=int, help='Number of latent dimensions')
+parser.add_argument('--num-epoch', default=10000, type=int, help='Number of epochs')
+parser.add_argument('--batch-size', default=256, type=int, help='Batch size')
+parser.add_argument('--num-workers', default=18, type=int, help='Num processes utilized')
+parser.add_argument('--beta', default=4, type=float, help='Beta coefficient for KL-divergence')
+parser.add_argument('--model-name', default='vaed_test', type=str, help='Results are saved to a given folder name')
+parser.add_argument('--data-path', default='umd_dataset', type=str, help='Dataset loaded to')
+parser.add_argument('--debug', dest='debug', action='store_true')
+parser.set_defaults(debug=False)
+parser.add_argument('--depth', dest='depth', action='store_true')
+parser.set_defaults(depth=False)
 
 
-# from torch.nn.init import kaiming_normal
+LOG_PATH = 'umd_results'
 
-def main():
+
+def main(args):
     # Run options
-    LEARNING_RATE = 1.0e-3
     use_cuda = torch.cuda.is_available()
+
+    save_path = os.path.join(LOG_PATH, args.model_name)
+
+    save_arguments(args, save_path)
 
     if use_cuda:
         print('GPU works!')
     else:
-        for i in range(10):
-            print('YOU ARE NOT USING GPU')
+        print('YOU ARE NOT USING GPU!')
 
     device = torch.device('cuda' if use_cuda else 'cpu')
 
-    # Run only for a single iteration for testing
-    NUM_EPOCHS = 1000
-    BATCH_SIZE = 256
-    NUM_PROCESSES = 16
+    input_channels = 4 if args.depth else 3
 
-    # Data and model
-    z_dim = 10
-    depth = 3
+    encoder = Encoder(args.latent_size, input_channels)
+    decoder = Decoder(args.latent_size, 7)
 
-    grayscale = True
-    if depth > 1:
-        grayscale = False
+    model = AffordanceVAED(encoder, decoder, device, beta=args.beta).to(device)
 
-    encoder = Encoder(z_dim, depth)
-    decoder = Decoder(z_dim, depth)
-    model = VAE(encoder, decoder, device, beta=5).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    dataloader = UMDLoader(args.batch_size, args.num_workers, args.data_path, args.depth, debug=False)
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    dataloader = ImageLoader(BATCH_SIZE, NUM_PROCESSES, 'data/affordances', grayscale=grayscale, debug=False)
+    trainer = Trainer(dataloader, model, log_path=save_path)
 
-    trainer = Trainer(dataloader, save_folder='umd_1', save_name='umd_1_simple_cnn_beta_4_dim_10', log=True, visdom=True)
-    # trainer = Trainer(dataloader, visdom=True)
-    trainer.train(model, NUM_EPOCHS, optimizer)
+    trainer.train(args.num_epoch, optimizer)
 
 
 if __name__ == '__main__':
-    main()
+    args = parser.parse_args()
+    main(args)

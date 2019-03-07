@@ -115,6 +115,7 @@ class Saver(object):
 
         num_rows = 6
         num_images = int(num_samples / num_rows)
+
         iter = 0
 
         for b in range(num_images):
@@ -139,7 +140,6 @@ class Trainer(Engine):
     def __init__(self, dataloader, model, log_path=None):
         super(Trainer, self).__init__()
 
-        # TODO latent_dim
         self.get_iterator = dataloader.get_iterator
         self.meter_loss = tnt.meter.AverageValueMeter()
         self.meter_loss = tnt.meter.AverageValueMeter()
@@ -185,6 +185,8 @@ class Trainer(Engine):
         self.reconstruction_samples = reconstruction_samples
 
     def on_start_epoch(self, state):
+        print('Training epoch', self.epoch_iter)
+
         self.model.train(True)
         self.reset_meters()
 
@@ -195,8 +197,6 @@ class Trainer(Engine):
 
     def on_end_epoch(self, state):
 
-        print('EPOCH', self.epoch_iter)
-
         train_loss = self.meter_loss.value()[0]
         bce_train = self.bce.value()[0]
         kld_train = self.kld.value()[0]
@@ -204,9 +204,9 @@ class Trainer(Engine):
         self.reset_meters()
         self.test(self.model.evaluate, self.get_iterator(False))
 
-        val_loss = self.meter_loss.value()[0]  # type: float
-        bce_val = self.bce.value()[0] # type: float
-        kld_val = self.kld.value()[0] # type: float
+        val_loss = self.meter_loss.value()[0]
+        bce_val = self.bce.value()[0]
+        kld_val = self.kld.value()[0]
 
         print("Loss train: {}, val: {}".format(train_loss, val_loss))
         print("BCE: train: {}, val: {}".format(bce_train, bce_val))
@@ -228,32 +228,4 @@ class Trainer(Engine):
             self.saver.get_result_pair(self.input_samples[:18], self.affordances_samples[:18], self.reconstruction_samples[:18], self.epoch_iter)
 
         self.epoch_iter += 1
-
-
-class Demonstrator(Trainer):
-
-    def __init__(self,  folder, model_name, model, data_loader, visdom_title='training_results'):
-        super(Demonstrator, self).__init__(data_loader, visdom_title=visdom_title, visdom=True)
-        self.model = model
-        self.load_parameters(folder, model_name)
-
-    def initialize_engine(self):
-        self.hooks['on_sample'] = self.on_sample
-        self.hooks['on_forward'] = self.on_forward
-
-    def load_parameters(self, folder, model_name):
-        Path = os.path.join('log/{}'.format(folder), '{}.pth.tar'.format(model_name))
-        self.model.load_state_dict(torch.load(Path))
-        self.model.eval()
-
-    def evaluate(self):
-        self.test(self.model.evaluate, self.get_iterator(False))
-        val_loss = self.meter_loss.value()[0]
-
-        print('Testing loss: %.4f' % (val_loss))
-
-#        self.generate_visdom_samples(self.visdom_samples)
-#        self.generate_latent_samples(self.visdom_samples[0])
-
-
 
