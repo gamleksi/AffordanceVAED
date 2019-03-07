@@ -2,9 +2,19 @@ import numpy as np
 import torch
 from torchvision import transforms
 from PIL import Image
-from tools import load_format_paths
 import torch.utils.data as data
 from scipy.io import loadmat
+from torchvision.datasets.folder import find_classes, make_dataset
+
+
+def load_format_paths(folder_path, extension):
+
+    classes, class_to_idx = find_classes(folder_path)
+    samples = make_dataset(folder_path, class_to_idx, [extension])
+    paths = np.array([s[0] for s in samples])
+    classes = np.array([int(s[1]) for s in samples])
+
+    return paths, classes
 
 
 class UMDFolder(data.Dataset):

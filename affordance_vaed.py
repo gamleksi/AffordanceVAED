@@ -75,6 +75,73 @@ class Encoder(nn.Module):
         return z_loc, z_scale
 
 
+
+class UMDDecoder(nn.Module):
+
+    def __init__(self, latent_dim, output_dim):
+        super(UMDDecoder, self).__init__()
+
+        self.fc = nn.Linear(latent_dim, 14976)
+
+        self.cnn1 = nn.ConvTranspose2d(64, 64, kernel_size=(4,4),  stride=2)
+        self.cnn2 = nn.ConvTranspose2d(64, 32, kernel_size=(4,4),  stride=2)
+        self.cnn3 = nn.ConvTranspose2d(32, 32, kernel_size=(4,4),  stride=2, output_padding=1)
+        self.cnn4 = nn.ConvTranspose2d(32, output_dim, kernel_size=(4,4),  stride=2)
+
+        self.bn1 = nn.BatchNorm1d(14976)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.bn3 = nn.BatchNorm2d(32)
+        self.bn4 = nn.BatchNorm2d(32)
+
+        self.sigmoid = nn.Sigmoid()
+        self.relu = F.relu
+
+    def forward(self, z):
+
+        x = self.relu(self.bn1(self.fc(z)))
+        x = x.view(-1, 64, 13, 18)
+        x = self.relu(self.bn2(self.cnn1(x)))
+        x = self.relu(self.bn3(self.cnn2(x)))
+        x = self.relu(self.bn4(self.cnn3(x)))
+        x = self.sigmoid(self.cnn4(x))
+        return x
+
+
+class UMDEncoder(nn.Module):
+
+    def __init__(self, latent_dim, input_depth):
+        super(UMDEncoder, self).__init__()
+
+        self.cnn1 = nn.Conv2d(input_depth, 32, kernel_size=(4,4), stride=2)
+        self.cnn2 = nn.Conv2d(32, 32, kernel_size=(4,4),  stride=2)
+        self.cnn3 = nn.Conv2d(32, 32, kernel_size=(4,4),  stride=2)
+        self.cnn4 = nn.Conv2d(32, 64, kernel_size=(4,4),  stride=2)
+
+        self.fc21 = nn.Linear(14976, latent_dim)
+        self.fc22 = nn.Linear(14976, latent_dim)
+
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.bn3 = nn.BatchNorm2d(32)
+        self.bn4 = nn.BatchNorm2d(64)
+
+        self.relu = F.relu
+
+    def forward(self, x):
+
+        x = self.relu(self.bn1(self.cnn1(x)))
+        x = self.relu(self.bn2(self.cnn2(x)))
+        x = self.relu(self.bn3(self.cnn3(x)))
+        x = self.relu(self.bn4(self.cnn4(x)))
+
+        x = x.view(-1, 14976)
+
+        z_loc = self.fc21(x)
+        z_scale = self.fc22(x)
+
+        return z_loc, z_scale
+
+
 class VAE(nn.Module):
 
     def __init__(self, encoder, decoder, device, beta=1):

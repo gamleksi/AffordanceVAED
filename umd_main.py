@@ -3,7 +3,7 @@ import argparse
 import torch
 import torch.optim as optim
 
-from affordance_vaed import AffordanceVAED, Encoder, Decoder
+from affordance_vaed import AffordanceVAED, UMDEncoder, UMDDecoder
 from umd_loader import UMDLoader
 from affordance_trainer import Trainer
 from tools import save_arguments
@@ -45,8 +45,8 @@ def main(args):
 
     input_channels = 4 if args.depth else 3
 
-    encoder = Encoder(args.latent_size, input_channels)
-    decoder = Decoder(args.latent_size, 7)
+    encoder = UMDEncoder(args.latent_size, input_channels)
+    decoder = UMDDecoder(args.latent_size, 7)
 
     model = AffordanceVAED(encoder, decoder, device, beta=args.beta).to(device)
 
