@@ -1,4 +1,6 @@
-# [Affordance Learning for End-to-End Visuomotor Robot Control](TODO)
+# AffordanceVAED
+
+## [Affordance Learning for End-to-End Visuomotor Robot Control](TODO)
 
 In [Affordance Learning for End-to-End Visuomotor Robot Control](TODO), we introduced a modular deep neural network structure, 
 that detects a container on a table, and inserts a ball into it.
@@ -15,7 +17,7 @@ Figure 1 shows the structure of the model.
 * [TrajectoryVAE](https://github.com/gamleksi/TrajectoryVAE) represents trajectories in a low-dimensional latent space, and generates a trajectory based on a given latent vector.
 * [affordance_gym](https://github.com/gamleksi/affordance_gym) generates training data for TrajectoryVAE, and combines VAED and TrajectoryVAE together to perform desired trajectories based on an observation.
 
-# AffordanceVAED
+## Model
 
 This reprository inroduces the variational affordance encoder-decoder structure:
 
