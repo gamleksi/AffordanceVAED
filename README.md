@@ -1,8 +1,8 @@
 # AffordanceVAED
 
-## [Affordance Learning for End-to-End Visuomotor Robot Control](TODO)
+## Affordance Learning for End-to-End Visuomotor Robot Control
 
-In [Affordance Learning for End-to-End Visuomotor Robot Control](TODO), we introduced a modular deep neural network structure, 
+In [Affordance Learning for End-to-End Visuomotor Robot Control](https://arxiv.org/abs/1903.04053), we introduced a modular deep neural network structure, 
 that detects a container on a table, and inserts a ball into it.
 
 We showed that our system performs its task successfully in zero-shot sim-to-real transfer manner.
